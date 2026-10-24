@@ -14,7 +14,7 @@ import { coverageLines } from './street.js';
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
 })();
-const MIN_CHUNK_METERS = 30;      // pieces where you barely moved aren't worth uploading
+const MIN_CHUNK_METERS = 10;      // skip pieces where you barely moved; a short last piece is still real footage
 const VIDEO_BPS = 1_500_000;      // ~11 MB a minute
 
 const S = {

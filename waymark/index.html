@@ -186,7 +186,8 @@
 <!-- Footage viewer: street view, trip preview, live navigation -->
 <main id="view-stage" class="view stage" hidden>
   <div class="stage-media">
-    <video id="stageVideo" playsinline muted preload="auto"></video>
+    <video id="stageVideo" class="stage-video is-front" playsinline muted preload="auto"></video>
+    <video id="stageVideo2" class="stage-video" playsinline muted preload="auto" aria-hidden="true"></video>
     <div class="stage-loading" id="stageLoading" hidden><span class="spinner" aria-hidden="true"></span>Loading footage…</div>
     <div class="stage-empty" id="stageEmpty" hidden></div>
   </div>

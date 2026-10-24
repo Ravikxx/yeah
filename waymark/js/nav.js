@@ -231,6 +231,7 @@ async function runPreview(tok) {
     const r = runs[i];
     if (r.id) {
       const shown = await stage.showFrame(r.seg, r.t0);
+      stage.preload(runs.slice(i + 1).find((x) => x.id && x.id !== r.id)?.seg); // next piece, ready when needed
       if (!alive(tok)) return;
       const v = stage.video();
       v.playbackRate = P.rate;

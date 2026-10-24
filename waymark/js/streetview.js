@@ -68,9 +68,8 @@ function wire() {
     const b = e.target.closest('button[data-act]');
     if (b && !b.disabled) act(b.dataset.act);
   });
-  const v = stage.video() || document.getElementById('stageVideo');
-  v.addEventListener('timeupdate', onDriveTime);
-  v.addEventListener('ended', () => active && driving && rollOn());
+  stage.on('timeupdate', onDriveTime);
+  stage.on('ended', () => active && driving && rollOn());
 }
 
 // The frame being loaded right now, so Drive can wait for it.
@@ -142,13 +141,13 @@ function act(name) {
 function setDriving(on) {
   driving = on;
   renderControls(opts);
-  const v = stage.video();
-  if (!on) { v.pause(); return; }
+  if (!on) { stage.video().pause(); return; }
   // If footage is still loading, playing now would be cut off when the frame
   // lands (it pauses on the chosen moment), so start once it's on screen.
+  // Look the player up afterwards: the new frame may arrive in the other one.
   framePending.then(() => {
     if (!driving || !active) return;
-    v.play().catch((err) => {
+    stage.video().play().catch((err) => {
       if (err.name === 'AbortError') return; // a newer frame took over; it plays if still driving
       driving = false;
       renderControls(opts);
@@ -172,8 +171,12 @@ function onDriveTime() {
     renderInfo();
     history.replaceState(null, '', `#/view/${p.lat.toFixed(6)},${p.lng.toFixed(6)},${Math.round(heading)}`);
   }
-  if (t >= view.seg.pts[view.seg.pts.length - 1].t - 0.15) rollOn();
+  const end = view.seg.pts[view.seg.pts.length - 1].t;
+  // A few seconds before this piece ends, start loading the one that follows.
+  if (t >= end - 4 && preloadedFor !== view.id) { preloadedFor = view.id; stage.preload(continuation(1)?.seg); }
+  if (t >= end - 0.15) rollOn();
 }
+let preloadedFor = null;
 
 let rolling = false;
 async function rollOn() {

@@ -1,6 +1,10 @@
 // The full-screen footage viewer used by street view, trip preview and live
-// navigation: one <video> showing the right moment of the right recording,
-// a mini map with a view cone, a compass, and a slot for the direction sign.
+// navigation: the right moment of the right recording, a mini map with a view
+// cone, a compass, and a slot for the direction sign.
+//
+// Two <video> players take turns: the next piece of footage loads in the
+// hidden one while the current frame stays on screen, then they swap. So
+// moving between 2-minute pieces never flashes black.
 
 import { videoUrl } from './api.js';
 import { compass } from './directions.js';
@@ -11,8 +15,9 @@ import * as coverage from './coverage.js';
 const el = {};
 let wired = false;
 let mini, covLayer, extraLayer, marker;
-let currentId = null;
+let players = [];        // [{ v, id }], players[0] is on screen
 let token = 0;
+const handlers = [];     // [event, fn] for the on-screen player only
 
 function wire() {
   if (wired) return;
@@ -20,11 +25,17 @@ function wire() {
   for (const id of ['stageVideo', 'stageLoading', 'stageEmpty', 'stageInfo', 'stageSign', 'stageNote', 'stageMini', 'compass', 'svControls', 'navControls', 'stageExit']) {
     el[id] = document.getElementById(id);
   }
-  el.stageVideo.addEventListener('error', () => {
-    if (!currentId) return;
-    el.stageLoading.hidden = true;
-    showEmpty('<h3>This footage couldn’t be played</h3><p>The video may still be uploading, or this browser can’t play its format.</p>');
-  });
+  players = [{ v: el.stageVideo, id: null }, { v: document.getElementById('stageVideo2'), id: null }];
+  for (const p of players) {
+    p.v.addEventListener('error', () => {
+      if (p !== players[0] || !p.id) return;
+      el.stageLoading.hidden = true;
+      showEmpty('<h3>This footage couldn’t be played</h3><p>The video may still be uploading, or this browser can’t play its format.</p>');
+    });
+    for (const ev of ['timeupdate', 'ended', 'seeked', 'play', 'pause']) {
+      p.v.addEventListener(ev, (e) => { if (p === players[0]) handlers.forEach(([n, fn]) => n === ev && fn(e)); });
+    }
+  }
   coverage.onChange(() => mini && drawMini());
 }
 
@@ -50,10 +61,7 @@ export function open(mode) {
 
 export function close() {
   token++;
-  const v = el.stageVideo;
-  if (!v) return;
-  v.pause();
-  v.playbackRate = 1;
+  for (const p of players) { p.v.pause(); p.v.playbackRate = 1; }
 }
 
 function drawMini() {
@@ -66,29 +74,59 @@ const once = (target, ev, ms = 15000) => new Promise((resolve, reject) => {
   target.addEventListener(ev, ok, { once: true });
 });
 
+// Listen to the on-screen player, whichever of the two it is.
+export function on(ev, fn) { wire(); handlers.push([ev, fn]); }
+
+function load(p, seg) {
+  if (p.id === seg.id) return;
+  p.id = seg.id;
+  p.v.src = videoUrl(seg.id);
+  p.v.load();
+}
+
+// Starts fetching a piece in the hidden player, so showing it later is instant.
+export function preload(seg) {
+  wire();
+  if (!seg || players[0].id === seg.id) return;
+  load(players[1], seg);
+}
+
+function swap() {
+  const [front, back] = players;
+  back.v.classList.add('is-front');
+  front.v.classList.remove('is-front');
+  front.v.pause();
+  players = [back, front];
+}
+
 // Shows recording `seg` at time t. Resolves false if a newer call superseded it.
 export async function showFrame(seg, t, { play = false } = {}) {
+  wire();
   const my = ++token;
-  const v = el.stageVideo;
   hideEmpty();
+  // Same piece as on screen: just seek. Otherwise prepare the hidden player,
+  // keeping the current frame up meanwhile, and swap when it's ready.
+  const p = players[0].id === seg.id ? players[0] : players[1];
+  const v = p.v;
+  const blank = !players[0].id || players[0].v.readyState < 2;
   try {
-    if (currentId !== seg.id) {
-      el.stageLoading.hidden = false;
-      currentId = seg.id;
-      v.src = videoUrl(seg.id);
-      await once(v, 'loadedmetadata');
+    if (p.id !== seg.id || v.readyState < 1) {
+      if (blank) el.stageLoading.hidden = false;
+      load(p, seg);
+      if (v.readyState < 1) await once(v, 'loadedmetadata');
       if (my !== token) return false;
     }
-    if (Math.abs(v.currentTime - t) > 0.08) {
+    if (Math.abs(v.currentTime - t) > 0.08 || v.readyState < 2) {
       if (!v.paused && !play) v.pause();
       v.currentTime = Math.max(0, t);
       await once(v, 'seeked', 20000);
       if (my !== token) return false;
     }
   } catch {
-    if (my === token) { el.stageLoading.hidden = true; currentId = null; }
+    if (my === token) { el.stageLoading.hidden = true; p.id = null; }
     return false;
   }
+  if (p !== players[0]) swap();
   el.stageLoading.hidden = true;
   if (play) v.play().catch(() => {});
   else if (!v.paused) v.pause();
@@ -129,12 +167,12 @@ export function hideEmpty() {
   if (el.stageEmpty) el.stageEmpty.hidden = true;
 }
 
-// Forget the loaded recording (e.g. it was deleted).
+// Forget the loaded recordings (e.g. they were deleted).
 export function reset() {
-  currentId = null;
   token++;
-  if (el.stageVideo) { el.stageVideo.removeAttribute('src'); el.stageVideo.load(); }
+  for (const p of players) { p.id = null; p.v.removeAttribute('src'); p.v.load(); }
 }
 
-export const video = () => el.stageVideo;
+// The player currently on screen.
+export const video = () => { wire(); return players[0].v; };
 export const miniMap = () => mini;

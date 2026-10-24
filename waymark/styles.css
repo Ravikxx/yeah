@@ -559,7 +559,8 @@ fieldset.field legend { padding: 0; margin-bottom: 6px; }
    ===================================================================== */
 .stage { position: fixed; inset: 0; z-index: 2000; background: #050807; color: #fff; overflow: hidden; }
 .stage-media { position: absolute; inset: 0; }
-.stage-media video { width: 100%; height: 100%; object-fit: cover; max-width: none; background: #050807; }
+.stage-media video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; max-width: none; background: #050807; }
+.stage-media video:not(.is-front) { opacity: 0; pointer-events: none; }
 @media (max-aspect-ratio: 1/1) { .stage-media video { object-fit: contain; } }
 .stage-loading { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-radius: 99px; background: rgb(0 0 0 / .6); font-weight: 700; }
 .spinner { width: 18px; height: 18px; border-radius: 50%; border: 3px solid rgb(255 255 255 / .3); border-top-color: #fff; animation: spin .8s linear infinite; }
