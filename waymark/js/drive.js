@@ -354,7 +354,7 @@ async function newMission() {
       try { trip = await planTrip(S.mode, fix, dest); } catch { continue; }
       const end = trip.latlngs[trip.latlngs.length - 1];
       // The router snaps to the nearest road; skip spots it can't reach sensibly.
-      if (trip.distance < 150 || distance(fix, { lat: end[0], lng: end[1] }) > radius * 1.1 || trip.distance > radius * 3) continue;
+      if (trip.distance < Math.min(150, radius * 0.3) || distance(fix, { lat: end[0], lng: end[1] }) > radius * 1.1 || trip.distance > radius * 3) continue;
       startMission(trip, radius);
       if (!S.capturing) toast('Destination set. Tap the red button to start capturing, then follow the directions.');
       return;
