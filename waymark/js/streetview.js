@@ -73,6 +73,9 @@ function wire() {
   v.addEventListener('ended', () => active && driving && rollOn());
 }
 
+// The frame being loaded right now, so Drive can wait for it.
+let framePending = Promise.resolve();
+
 async function go(v, { play = false } = {}) {
   view = v;
   opts = viewOptions(coverage.getIndex(), v);
@@ -80,7 +83,8 @@ async function go(v, { play = false } = {}) {
   stage.setPosition(v.lat, v.lng, v.heading);
   renderInfo();
   history.replaceState(null, '', `#/view/${v.lat.toFixed(6)},${v.lng.toFixed(6)},${Math.round(v.heading)}`);
-  await stage.showFrame(v.seg, v.t, { play });
+  framePending = stage.showFrame(v.seg, v.t, { play: play || driving });
+  await framePending;
 }
 
 function renderInfo() {
@@ -137,10 +141,19 @@ function act(name) {
 
 function setDriving(on) {
   driving = on;
-  const v = stage.video();
-  if (on) v.play().catch(() => { driving = false; renderControls(opts); });
-  else v.pause();
   renderControls(opts);
+  const v = stage.video();
+  if (!on) { v.pause(); return; }
+  // If footage is still loading, playing now would be cut off when the frame
+  // lands (it pauses on the chosen moment), so start once it's on screen.
+  framePending.then(() => {
+    if (!driving || !active) return;
+    v.play().catch((err) => {
+      if (err.name === 'AbortError') return; // a newer frame took over; it plays if still driving
+      driving = false;
+      renderControls(opts);
+    });
+  });
 }
 
 let lastOpts = 0;
