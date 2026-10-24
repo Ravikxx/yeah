@@ -64,6 +64,13 @@ function wire() {
   el.driveBtn.addEventListener('click', () => (S.capturing ? stopCapture() : startCapture()));
   el.driveClose.addEventListener('click', () => { location.hash = '#/'; });
   document.getElementById('missionBtn').addEventListener('click', newMission);
+  for (const r of document.querySelectorAll('input[name="ridemode"]')) {
+    r.addEventListener('change', () => {
+      const mode = rideMode();
+      document.getElementById('missionOpts').hidden = mode === 'free';
+      if (mode === 'free') endMission();
+    });
+  }
   document.getElementById('missionEnd').addEventListener('click', () => endMission('Trip ended.'));
   el.driveAgain.addEventListener('click', () => {
     el.done.hidden = true;
@@ -343,7 +350,7 @@ async function newMission() {
   btn.disabled = true;
   btn.textContent = 'Finding a place…';
   try {
-    if (document.getElementById('missionStreet').checked) {
+    if (rideMode() === 'street') {
       if (await sameStreetMission(fix, radius)) return;
       toast('Couldn’t find a stretch of this street that far without turning. Try a shorter distance.');
       return;
@@ -367,7 +374,7 @@ async function newMission() {
     toast('Couldn’t find a reachable spot. Try again or pick a bigger distance.');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'New destination';
+    btn.textContent = 'Go';
   }
 }
 
@@ -482,3 +489,5 @@ function logNav(fix, cur, plan, next, d) {
     left: d !== null ? plan.distance - d : null,
   });
 }
+
+const rideMode = () => document.querySelector('input[name="ridemode"]:checked')?.value || 'free';

@@ -179,17 +179,21 @@
     <div class="mission-sign" id="missionSign" hidden></div>
     <div class="street-status" id="streetStatus" role="status" hidden></div>
     <div class="mission-bar">
-      <label class="mission-pick"><span>Destination within</span>
-        <select id="missionRadius" aria-label="How far away the destination can be">
-          <option value="0.1">0.1 mi</option><option value="0.25">0.25 mi</option><option value="0.5" selected>0.5 mi</option><option value="1">1 mi</option><option value="2">2 mi</option>
-          <option value="3">3 mi</option><option value="4">4 mi</option><option value="5">5 mi</option>
-          <option value="6">6 mi</option><option value="7">7 mi</option><option value="8">8 mi</option>
+      <div class="seg seg-sm seg-dark" role="group" aria-label="Ride type">
+        <label><input type="radio" name="ridemode" value="free" checked><span>Free ride</span></label>
+        <label><input type="radio" name="ridemode" value="dest"><span>Destination</span></label>
+        <label><input type="radio" name="ridemode" value="street"><span>This street</span></label>
+      </div>
+      <div class="mission-opts" id="missionOpts" hidden>
+        <select id="missionRadius" aria-label="How far">
+          <option value="0.1">0.1 mi</option><option value="0.25">0.25 mi</option><option value="0.5" selected>0.5 mi</option>
+          <option value="1">1 mi</option><option value="2">2 mi</option><option value="3">3 mi</option><option value="4">4 mi</option>
+          <option value="5">5 mi</option><option value="6">6 mi</option><option value="7">7 mi</option><option value="8">8 mi</option>
           <option value="9">9 mi</option><option value="10">10 mi</option>
         </select>
-      </label>
-      <label class="mission-pick"><input type="checkbox" id="missionStreet"> <span>This street only</span></label>
-      <button type="button" class="btn btn-nav btn-sm" id="missionBtn">New destination</button>
-      <button type="button" class="btn btn-on-dark btn-sm" id="missionEnd" hidden>End trip</button>
+        <button type="button" class="btn btn-nav btn-sm" id="missionBtn">Go</button>
+        <button type="button" class="btn btn-on-dark btn-sm" id="missionEnd" hidden>End trip</button>
+      </div>
     </div>
     <div class="hud-bottom">
       <span class="hud-spacer"></span>
