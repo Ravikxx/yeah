@@ -6,7 +6,7 @@ import * as coverage from './coverage.js';
 import * as queue from './queue.js';
 import * as nav from './nav.js';
 import { showRoutes, wireNearMe, showFootage, renderQueueLine } from './routes.js';
-import { coverageLines, findView } from './street.js';
+import { coverageLines, coveredLength, findView } from './street.js';
 import { $, esc, makeMap, drawCoverage, dotIcon } from './ui.js';
 import { formatDistance } from './geo.js';
 
@@ -92,26 +92,16 @@ function drawLines() {
   });
 }
 
-// How much street is captured in the current view. Lines are sampled every
-// ~10 m, so counting distinct ~10 m cells measures street length without
-// double counting a street driven both ways or more than once.
+// How much street is captured in the current view, each stretch counted once.
 function renderStats() {
   const b = map.getBounds();
-  const any = new Set(), both = new Set();
-  for (const l of lines) {
-    for (const [lat, lng] of l.latlngs) {
-      if (!b.contains([lat, lng])) continue;
-      const key = `${Math.round(lat / 0.00009)}:${Math.round(lng / 0.00012)}`;
-      any.add(key);
-      if (l.both) both.add(key);
-    }
-  }
+  const len = coveredLength(lines, (lat, lng) => b.contains([lat, lng]));
   const el = $('#covStats');
-  if (!any.size) {
+  if (!len.any) {
     el.textContent = map.getZoom() < 11 ? 'Zoom in to see captured streets.' : 'No streets captured in this area yet.';
     return;
   }
-  el.innerHTML = `In view: <b>${esc(formatDistance(any.size * 10))}</b> of street captured, <b>${esc(formatDistance(both.size * 10))}</b> of it both ways. Tap a colored street to look around.`;
+  el.innerHTML = `In view: <b>${esc(formatDistance(len.any))}</b> of street captured, <b>${esc(formatDistance(len.both))}</b> of it both ways. Tap a colored street to look around.`;
 }
 
 function onMapClick(e) {

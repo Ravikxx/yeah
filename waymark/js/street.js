@@ -154,3 +154,32 @@ export function matchPlan(index, planLatLngs, { step = 10 } = {}) {
   }
   return { runs, covered: n ? covered / n : 0, total };
 }
+
+// Street length covered by coverage lines (as from coverageLines), counting
+// a stretch once however many passes went over it. `inView(lat, lng)` limits
+// the count to an area. Returns meters: { any, both }.
+export function coveredLength(lines, inView = () => true, { step = 10, near = 8 } = {}) {
+  const cell = 0.0001;
+  const kept = { any: new Map(), both: new Map() };
+  const take = (grid, lat, lng) => {
+    const ci = Math.floor(lat / cell), cj = Math.floor(lng / cell);
+    for (let i = ci - 1; i <= ci + 1; i++) {
+      for (let j = cj - 1; j <= cj + 1; j++) {
+        for (const p of grid.get(`${i}:${j}`) || []) if (distance(p, { lat, lng }) < near) return false;
+      }
+    }
+    const k = `${ci}:${cj}`;
+    if (!grid.has(k)) grid.set(k, []);
+    grid.get(k).push({ lat, lng });
+    return true;
+  };
+  let any = 0, both = 0;
+  for (const l of lines) {
+    for (const [lat, lng] of l.latlngs) {
+      if (!inView(lat, lng)) continue;
+      if (take(kept.any, lat, lng)) any += step;
+      if (l.both && take(kept.both, lat, lng)) both += step;
+    }
+  }
+  return { any, both };
+}

@@ -89,3 +89,12 @@ test('planned trip the wrong way down a one-way capture is a gap', () => {
   const m = matchPlan(idx, plan);
   assert.ok(m.covered < 0.2, `covered ${m.covered}`);
 });
+
+test('covered length counts a street once, however many passes', async () => {
+  const { coveredLength } = await import('../js/street.js');
+  // Main St 400 m driven both ways (twice northbound) + Cross St 300 m one way.
+  const up2 = { id: 'up2', createdAt: 4, track: drive([O[0] + 1 * M_LAT, O[1] + 1 * M_LNG], [[0, 400]]) };
+  const len = coveredLength(coverageLines(buildIndex([up, down, up2, cross])));
+  assert.ok(Math.abs(len.any - 700) < 80, `any ${len.any}`);
+  assert.ok(Math.abs(len.both - 400) < 60, `both ${len.both}`);
+});
