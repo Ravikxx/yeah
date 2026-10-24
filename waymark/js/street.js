@@ -30,7 +30,12 @@ export function buildIndex(segments) {
     if (pts.length < 2 || pts[pts.length - 1].d < SAMPLE_M * 2) continue;
     const seg = { ...raw, pts, samples: [] };
     const total = pts[pts.length - 1].d;
-    for (let d = 0; d <= total; d += SAMPLE_M) {
+    // Every SAMPLE_M meters, plus the exact end so consecutive pieces of a
+    // recording meet with no hole between them.
+    const ds = [];
+    for (let d = 0; d <= total; d += SAMPLE_M) ds.push(d);
+    if (total - ds[ds.length - 1] > 0.5) ds.push(total);
+    for (const d of ds) {
       const p = atDistance(pts, d);
       const heading = headingAt(pts, d);
       if (heading == null) continue; // standing still: no direction to file it under
@@ -113,15 +118,19 @@ export function coverageLines(index, { step = 10, radius = 20 } = {}) {
   const lines = [];
   for (const seg of index.segs) {
     let run = null, hidden = null; // hidden: the last sample skipped because another pass is drawn there
-    for (let k = 0; k < seg.samples.length; k += Math.max(1, Math.round(step / SAMPLE_M))) {
+    // Every `step` meters, plus the very last sample so a piece's line reaches its end.
+    const ks = [];
+    for (let k = 0; k < seg.samples.length; k += Math.max(1, Math.round(step / SAMPLE_M))) ks.push(k);
+    if (seg.samples.length && ks[ks.length - 1] !== seg.samples.length - 1) ks.push(seg.samples.length - 1);
+    for (const k of ks) {
       const s = seg.samples[k];
-      let both = false, drawn = true;
+      let both = false, drawn = true, opposite = null, oppDist = Infinity;
       for (const o of nearby(index, s, radius)) {
         if (o.seg === seg) continue;
         const dist = distance(s, o);
         if (dist > radius) continue;
         const turn = Math.abs(turnAngle(s.heading, o.heading));
-        if (turn >= 135) both = true;
+        if (turn >= 135) { both = true; if (dist < oppDist) { oppDist = dist; opposite = o; } }
         // Hide this pass only where a lower-id pass runs BESIDE it. A pass that
         // merely ends a little way ahead mustn't hide it, or the line has gaps
         // wherever recordings start and stop at different places.
@@ -134,25 +143,41 @@ export function coverageLines(index, { step = 10, radius = 20 } = {}) {
           if (o.seg === seg && Math.abs(o.d - s.d) >= 40 && distance(s, o) <= radius && Math.abs(turnAngle(s.heading, o.heading)) >= 135) { both = true; break; }
         }
       }
+      // A street captured both ways is drawn down its middle, halfway between
+      // the two passes, so hand-offs between recordings line up.
+      const at = opposite ? [(s.lat + opposite.lat) / 2, (s.lng + opposite.lng) / 2] : [s.lat, s.lng];
       if (!drawn) {
         // Hand-off to another pass: reach one sample into its stretch so the
         // two lines overlap a little instead of leaving a gap.
-        if (run) run.latlngs.push([s.lat, s.lng]);
+        if (run) run.latlngs.push(at);
         run = null;
-        hidden = s;
+        hidden = at;
         continue;
       }
       if (!run || run.both !== both) {
-        if (run) run.latlngs.push([s.lat, s.lng]); // join runs so the line has no gaps
+        if (run) run.latlngs.push(at); // join runs so the line has no gaps
         run = { id: seg.id, both, heading: s.heading, latlngs: [] };
-        if (hidden) run.latlngs.push([hidden.lat, hidden.lng]); // taking over: start one sample back
+        if (hidden) run.latlngs.push(hidden); // taking over: start one sample back
         lines.push(run);
       }
-      run.latlngs.push([s.lat, s.lng]);
+      run.latlngs.push(at);
       hidden = null;
     }
   }
-  return lines.filter((l) => l.latlngs.length >= 2);
+  // Where one piece of footage ends a few meters from where the next one's
+  // line starts, join them so the street reads as one line.
+  const out = lines.filter((l) => l.latlngs.length >= 2);
+  for (const l of out) {
+    const [lat, lng] = l.latlngs[l.latlngs.length - 1];
+    let best = null, bestD = 6;
+    for (const o of out) {
+      if (o === l || o.both !== l.both) continue;
+      const d = distance({ lat, lng }, { lat: o.latlngs[0][0], lng: o.latlngs[0][1] });
+      if (d < bestD) { bestD = d; best = o; }
+    }
+    if (best && bestD > 0.01) l.latlngs.push(best.latlngs[0]);
+  }
+  return out;
 }
 
 // Lines up a planned route (e.g. from the router) with your footage.

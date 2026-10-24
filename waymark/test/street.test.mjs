@@ -136,13 +136,36 @@ test('no gaps where recordings start and stop at different places', async () => 
   const [n1, n2] = cut(fullN, 230), [s1, s2] = cut(fullS, 130);
   const segs = [{ id: 'm', track: n1 }, { id: 'b', track: n2 }, { id: 'z', track: s1 }, { id: 'a', track: s2 }];
   const lines = coverageLines(buildIndex(segs));
-  // Project every drawn point onto the street (it runs due north) and find
-  // the biggest jump between neighbors. Drawn samples are 10 m apart, so a
-  // continuous line has no jump much over that.
-  const along = lines.flatMap((l) => l.latlngs).map(([lat]) => (lat - O[0]) / M_LAT).filter((m) => m > 15 && m < 385).sort((a, b) => a - b);
-  let worst = 0, at = 0;
-  for (let i = 1; i < along.length; i++) if (along[i] - along[i - 1] > worst) { worst = along[i] - along[i - 1]; at = along[i - 1]; }
-  assert.ok(worst <= 14, `gap of ${worst.toFixed(1)} m in the drawn line at ${at.toFixed(0)} m`);
+  // A gap is a stretch of the street that no drawn line SEGMENT covers.
+  // Project each segment onto the street (it runs due north), merge the
+  // intervals, and find the longest uncovered stretch.
+  const spans = lines.flatMap((l) => l.latlngs.slice(1).map(([lat], i) => {
+    const a = (l.latlngs[i][0] - O[0]) / M_LAT, b = (lat - O[0]) / M_LAT;
+    return [Math.min(a, b), Math.max(a, b)];
+  })).sort((x, y) => x[0] - y[0]);
+  let reach = 30, worst = 0, at = 0;
+  for (const [a, b] of spans) {
+    if (b < 30) continue;
+    if (a > 370) break;
+    if (a > reach && a - reach > worst) { worst = a - reach; at = reach; }
+    reach = Math.max(reach, b);
+  }
+  if (reach < 370 && 370 - reach > worst) { worst = 370 - reach; at = reach; }
+  assert.ok(worst === 0, `uncovered stretch of ${worst.toFixed(1)} m at ${at.toFixed(0)} m`);
   const len = coveredLength(lines);
   assert.ok(Math.abs(len.any - 400) < 50, `any ${len.any}`);
+});
+
+test('a street captured both ways is drawn down its middle, without jogs', () => {
+  const N = lane(drive(O, [[0, 400]]), -5, 21), S = lane(drive([O[0] + 400 * M_LAT, O[1]], [[180, 400]]), 5, 23);
+  const cutAt = (tr, m) => { const k = Math.round(m / 8); return [tr.slice(0, k + 1), tr.slice(k).map(([t, a, b, c]) => [t - tr[k][0], a, b, c])]; };
+  const [n1, n2] = cutAt(N, 150), [s1, s2] = cutAt(S, 220);
+  const lines = coverageLines(buildIndex([{ id: 'q', track: n1 }, { id: 'c', track: n2 }, { id: 'k', track: s1 }, { id: 'f', track: s2 }]));
+  const pts = lines.flatMap((l) => l.latlngs).map(([lat, lng]) => ({ m: (lat - O[0]) / M_LAT, east: (lng - O[1]) / M_LNG }))
+    .filter((p) => p.m > 30 && p.m < 370).sort((a, b) => a.m - b.m);
+  const maxOff = Math.max(...pts.map((p) => Math.abs(p.east)));
+  let maxJog = 0;
+  for (let i = 1; i < pts.length; i++) maxJog = Math.max(maxJog, Math.abs(pts[i].east - pts[i - 1].east));
+  assert.ok(maxOff < 4, `drawn up to ${maxOff.toFixed(1)} m off the middle (lanes are 5 m either side)`);
+  assert.ok(maxJog < 4, `sideways jog of ${maxJog.toFixed(1)} m between neighbors`);
 });
