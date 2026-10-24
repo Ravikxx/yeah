@@ -126,3 +126,23 @@ test('a crossing street is still drawn at the intersection', () => {
   const lines = coverageLines(buildIndex([up, down, cross]));
   assert.ok(lines.some((l) => l.id === 'cross'), 'cross street missing');
 });
+
+test('no gaps where recordings start and stop at different places', async () => {
+  const { coveredLength } = await import('../js/street.js');
+  // Westbound-style pass split into pieces at 230 m; the other direction split at 130 m.
+  const fullN = lane(drive(O, [[0, 400]]), -5, 5);
+  const fullS = lane(drive([O[0] + 400 * M_LAT, O[1]], [[180, 400]]), 5, 7);
+  const cut = (tr, m) => { const k = Math.round(m / 8); return [tr.slice(0, k + 1), tr.slice(k).map(([t, a, b, c]) => [t - tr[k][0], a, b, c])]; };
+  const [n1, n2] = cut(fullN, 230), [s1, s2] = cut(fullS, 130);
+  const segs = [{ id: 'm', track: n1 }, { id: 'b', track: n2 }, { id: 'z', track: s1 }, { id: 'a', track: s2 }];
+  const lines = coverageLines(buildIndex(segs));
+  // Project every drawn point onto the street (it runs due north) and find
+  // the biggest jump between neighbors. Drawn samples are 10 m apart, so a
+  // continuous line has no jump much over that.
+  const along = lines.flatMap((l) => l.latlngs).map(([lat]) => (lat - O[0]) / M_LAT).filter((m) => m > 15 && m < 385).sort((a, b) => a - b);
+  let worst = 0, at = 0;
+  for (let i = 1; i < along.length; i++) if (along[i] - along[i - 1] > worst) { worst = along[i] - along[i - 1]; at = along[i - 1]; }
+  assert.ok(worst <= 14, `gap of ${worst.toFixed(1)} m in the drawn line at ${at.toFixed(0)} m`);
+  const len = coveredLength(lines);
+  assert.ok(Math.abs(len.any - 400) < 50, `any ${len.any}`);
+});

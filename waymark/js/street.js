@@ -112,15 +112,21 @@ function stepAlong(view, delta) {
 export function coverageLines(index, { step = 10, radius = 20 } = {}) {
   const lines = [];
   for (const seg of index.segs) {
-    let run = null;
+    let run = null, hidden = null; // hidden: the last sample skipped because another pass is drawn there
     for (let k = 0; k < seg.samples.length; k += Math.max(1, Math.round(step / SAMPLE_M))) {
       const s = seg.samples[k];
       let both = false, drawn = true;
       for (const o of nearby(index, s, radius)) {
-        if (o.seg === seg || distance(s, o) > radius) continue;
+        if (o.seg === seg) continue;
+        const dist = distance(s, o);
+        if (dist > radius) continue;
         const turn = Math.abs(turnAngle(s.heading, o.heading));
         if (turn >= 135) both = true;
-        if ((turn >= 135 || turn <= 45) && o.seg.id < seg.id) drawn = false;
+        // Hide this pass only where a lower-id pass runs BESIDE it. A pass that
+        // merely ends a little way ahead mustn't hide it, or the line has gaps
+        // wherever recordings start and stop at different places.
+        const along = Math.abs(dist * Math.cos(turnAngle(s.heading, bearing(s, o)) * Math.PI / 180));
+        if ((turn >= 135 || turn <= 45) && o.seg.id < seg.id && along <= 4) drawn = false; // its samples are 5 m apart, so "beside" is within ~2.5 m along
       }
       // A U-turn within one recording also covers both ways.
       if (!both) {
@@ -128,13 +134,22 @@ export function coverageLines(index, { step = 10, radius = 20 } = {}) {
           if (o.seg === seg && Math.abs(o.d - s.d) >= 40 && distance(s, o) <= radius && Math.abs(turnAngle(s.heading, o.heading)) >= 135) { both = true; break; }
         }
       }
-      if (!drawn) { run = null; continue; }
+      if (!drawn) {
+        // Hand-off to another pass: reach one sample into its stretch so the
+        // two lines overlap a little instead of leaving a gap.
+        if (run) run.latlngs.push([s.lat, s.lng]);
+        run = null;
+        hidden = s;
+        continue;
+      }
       if (!run || run.both !== both) {
         if (run) run.latlngs.push([s.lat, s.lng]); // join runs so the line has no gaps
         run = { id: seg.id, both, heading: s.heading, latlngs: [] };
+        if (hidden) run.latlngs.push([hidden.lat, hidden.lng]); // taking over: start one sample back
         lines.push(run);
       }
       run.latlngs.push([s.lat, s.lng]);
+      hidden = null;
     }
   }
   return lines.filter((l) => l.latlngs.length >= 2);
