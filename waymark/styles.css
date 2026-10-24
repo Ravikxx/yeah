@@ -617,6 +617,7 @@ fieldset.field legend { padding: 0; margin-bottom: 6px; }
   background: #fff; color: #0B1511; font: 800 1rem/1 var(--f-display); font-stretch: 82%; text-transform: uppercase; letter-spacing: .04em;
 }
 .sv-drive.is-on { background: var(--amber); }
+.sv-drive:disabled { opacity: .3; cursor: not-allowed; }
 .turn-hint { margin: 0; max-width: 200px; text-align: center; font-size: .8rem; color: #F5D78A; text-shadow: 0 1px 3px #000; }
 @media (max-width: 600px) {
   .stage-mini { width: 150px; height: 120px; }
