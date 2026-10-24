@@ -168,11 +168,13 @@ function setGps(state, text) {
 
 function onFix(pos) {
   const { latitude: lat, longitude: lng, accuracy: acc } = pos.coords;
+  const gpsSpeed = Number.isFinite(pos.coords.speed) ? pos.coords.speed : null;     // m/s, from the phone
+  const gpsHeading = Number.isFinite(pos.coords.heading) ? pos.coords.heading : null; // degrees, from the phone
   S.lastFix = { lat, lng, acc, at: performance.now() };
   const state = acc <= 15 ? 'good' : acc <= 35 ? 'fair' : 'bad';
   setGps(state, `GPS ±${formatDistance(acc)}`);
   if (S.recording) {
-    S.track.push({ t: (performance.now() - S.t0) / 1000, lat, lng, acc });
+    S.track.push({ t: (performance.now() - S.t0) / 1000, lat, lng, acc, speed: gpsSpeed, heading: gpsHeading });
     S.trail?.eachLayer((l) => l.addLatLng([lat, lng]));
   }
   if (S.hudMap) {
@@ -416,7 +418,7 @@ async function upload() {
         description: $('#rDesc').value.trim(),
         mode: f.elements.mode.value,
         listed: f.elements.listed.value === '1',
-        track: S.track.map((p) => [p.t, p.lat, p.lng, p.acc]),
+        track: S.track.map((p) => [p.t, p.lat, p.lng, p.acc, p.speed ?? null, p.heading ?? null]),
         notes: S.notes,
       },
       video: S.blob,

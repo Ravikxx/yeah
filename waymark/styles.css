@@ -473,6 +473,8 @@ fieldset.field legend { padding: 0; margin-bottom: 6px; }
 .step-ico { width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; background: var(--sign); color: var(--sign-ink); }
 
 /* my footage */
+.export-card { display: grid; gap: var(--s-2); padding: var(--s-4); border: 1px solid var(--rule); border-radius: var(--r-2); background: var(--paper); }
+.cmd { margin: 0; padding: 10px 12px; border-radius: var(--r-1); background: var(--ink); color: var(--paper); font: 500 .78rem/1.4 var(--f-mono); white-space: pre-wrap; word-break: break-all; }
 .footage-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
 .footage { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-3); border: 1px solid var(--rule); border-radius: var(--r-2); background: var(--paper); flex-wrap: wrap; }
 .footage > div:first-child { display: grid; gap: 2px; }

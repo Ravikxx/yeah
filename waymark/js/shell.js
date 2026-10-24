@@ -5,7 +5,7 @@
 import * as coverage from './coverage.js';
 import * as queue from './queue.js';
 import * as nav from './nav.js';
-import { showRoutes, wireNearMe, showFootage, renderQueueLine } from './routes.js';
+import { showRoutes, wireNearMe, showFootage, renderQueueLine, wireExport } from './routes.js';
 import { coverageLines, coveredLength, findView } from './street.js';
 import { $, esc, makeMap, drawCoverage, dotIcon } from './ui.js';
 import { formatDistance } from './geo.js';
@@ -62,7 +62,7 @@ export function showShell(tab) {
   for (const t of ['explore', 'directions', 'routes', 'mine']) $(`#pane-${t}`).hidden = t !== tab;
   if (tab !== 'explore') setSheet(true);
   if (tab === 'routes') showRoutes(map, pinsLayer); else pinsLayer.clearLayers();
-  if (tab === 'mine') { showFootage(map); showRoutes(map, pinsLayer, { mineOnly: true }); renderQueueLine(queue.status); }
+  if (tab === 'mine') { wireExport(); showFootage(map); showRoutes(map, pinsLayer, { mineOnly: true }); renderQueueLine(queue.status); }
   coverage.refresh();
   loadCoverage();
   renderStats();

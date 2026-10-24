@@ -25,6 +25,7 @@ export const getCoverage = ([w, s, e, n], ids = []) =>
     .then((b) => b.segments);
 export const searchPlaces = (q, near) =>
   request(`/api/search?q=${encodeURIComponent(q)}${near ? `&lat=${near.lat.toFixed(4)}&lng=${near.lng.toFixed(4)}` : ''}`).then((b) => b.results);
+export const exportData = (ids) => request(`/api/export?ids=${ids.join(',')}`);
 export const videoUrl = (id) => `${API_BASE}/api/routes/${encodeURIComponent(id)}/video`;
 export const thumbUrl = (id) => `${API_BASE}/api/routes/${encodeURIComponent(id)}/thumb`;
 

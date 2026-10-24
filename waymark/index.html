@@ -97,6 +97,17 @@
         <h2>My footage</h2>
         <p class="meta" id="queueLine"></p>
         <ol id="footageList" class="footage-list"></ol>
+        <div class="export-card">
+          <h2>Download for AI training</h2>
+          <p class="meta">Get your footage onto your computer: every video plus position, speed and heading over time, and optionally individual frames labeled with them.</p>
+          <div class="actions">
+            <button type="button" class="btn btn-primary btn-sm" id="exportBtn">Download my footage list</button>
+            <a class="btn btn-sm" href="tools/waymark_export.py" download>Download the script</a>
+          </div>
+          <p class="meta">Then, in the folder with both files (needs Python 3; ffmpeg for frames):</p>
+          <pre class="cmd">python waymark_export.py --manifest waymark-export.json --out data --fps 2</pre>
+          <p class="meta" id="exportNote"></p>
+        </div>
         <h2>My routes</h2>
         <ol id="myRouteList" class="route-list"></ol>
       </section>

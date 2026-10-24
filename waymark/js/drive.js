@@ -131,6 +131,8 @@ function setGps(state, text) {
 
 function onFix(pos) {
   const { latitude: lat, longitude: lng, accuracy: acc } = pos.coords;
+  const gpsSpeed = Number.isFinite(pos.coords.speed) ? pos.coords.speed : null;     // m/s, from the phone
+  const gpsHeading = Number.isFinite(pos.coords.heading) ? pos.coords.heading : null; // degrees, from the phone
   const now = performance.now();
   const fix = { lat, lng, acc, at: now };
   setGps(acc <= 15 ? 'good' : acc <= 35 ? 'fair' : 'bad', `GPS ±${formatDistance(acc)}`);
@@ -143,7 +145,7 @@ function onFix(pos) {
   if (S.capturing && S.chunk) {
     const prev = S.chunk.track[S.chunk.track.length - 1];
     if (prev && acc <= 35) S.meters += distance(prev, fix);
-    S.chunk.track.push({ t: (now - S.chunk.t0) / 1000, lat, lng, acc });
+    S.chunk.track.push({ t: (now - S.chunk.t0) / 1000, lat, lng, acc, speed: gpsSpeed, heading: gpsHeading });
     S.trail?.eachLayer((l) => l.addLatLng([lat, lng]));
   }
   S.lastFix = fix;
@@ -262,7 +264,7 @@ async function finishChunk(chunk) {
     blob,
     meta: {
       kind: 'capture', mode: S.mode, listed: S.listed, session: S.session,
-      title: '', track: chunk.track.map((p) => [p.t, p.lat, p.lng, p.acc]),
+      title: '', track: chunk.track.map((p) => [p.t, p.lat, p.lng, p.acc, p.speed ?? null, p.heading ?? null]),
     },
     createdAt: chunk.startedAt,
   });

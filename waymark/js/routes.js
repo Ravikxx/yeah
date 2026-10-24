@@ -1,7 +1,7 @@
 // Route lists for the side panel: public walkthrough routes, your own routes,
 // and your street-capture sessions.
 
-import { listRoutes, getRoute, thumbUrl, mine, deleteRoute } from './api.js';
+import { listRoutes, getRoute, thumbUrl, mine, deleteRoute, exportData } from './api.js';
 import * as coverage from './coverage.js';
 import { $, esc, pinIcon, toast, modeWord, fitPadding } from './ui.js';
 import { distance, formatDistance, formatDuration, formatClock } from './geo.js';
@@ -138,3 +138,35 @@ export function renderQueueLine(st) {
       : 'Everything you captured is uploaded.';
 }
 
+
+// Mine > Download for AI training: a file listing all your recordings (private
+// ones included) with telemetry and video links, for tools/waymark_export.py.
+let exportWired = false;
+export function wireExport() {
+  if (exportWired) return;
+  exportWired = true;
+  const btn = $('#exportBtn'), note = $('#exportNote');
+  btn.addEventListener('click', async () => {
+    const ids = Object.keys(mine());
+    if (!ids.length) { note.textContent = 'Nothing recorded from this browser yet.'; return; }
+    btn.disabled = true;
+    note.textContent = 'Preparing…';
+    try {
+      const data = await exportData(ids);
+      const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'waymark-export.json';
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      const fixes = data.recordings.reduce((n, r) => n + r.track.length, 0);
+      note.textContent = `Saved waymark-export.json: ${data.recordings.length} recordings, ${fixes} GPS points.`;
+    } catch (err) {
+      note.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
