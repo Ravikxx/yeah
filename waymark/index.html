@@ -61,6 +61,10 @@
       </section>
 
       <section class="pane" id="pane-directions" hidden>
+        <form class="dir-search" id="dirSearch" role="search" onsubmit="return false">
+          <input id="dirQuery" type="search" placeholder="Search an address or place" autocomplete="off" aria-label="Search an address or place">
+        </form>
+        <ol class="search-results" id="dirResults" hidden></ol>
         <form class="dir-form" id="dirForm" onsubmit="return false">
           <div class="dir-fields">
             <div class="dir-row"><span class="dir-dot a" aria-hidden="true">A</span><button type="button" class="dir-field" id="dirFrom">Your location</button>

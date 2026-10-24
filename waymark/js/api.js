@@ -23,6 +23,8 @@ export const getDirections = (mode, from, to) =>
 export const getCoverage = ([w, s, e, n], ids = []) =>
   request(`/api/coverage?bbox=${[w, s, e, n].map((v) => v.toFixed(5)).join(',')}${ids.length ? `&ids=${ids.join(',')}` : ''}`)
     .then((b) => b.segments);
+export const searchPlaces = (q, near) =>
+  request(`/api/search?q=${encodeURIComponent(q)}${near ? `&lat=${near.lat.toFixed(4)}&lng=${near.lng.toFixed(4)}` : ''}`).then((b) => b.results);
 export const videoUrl = (id) => `${API_BASE}/api/routes/${encodeURIComponent(id)}/video`;
 export const thumbUrl = (id) => `${API_BASE}/api/routes/${encodeURIComponent(id)}/thumb`;
 

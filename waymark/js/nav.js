@@ -3,6 +3,7 @@
 // street view, or drive it live with the matching view and turn signs.
 
 import { planTrip } from './directions.js';
+import { searchPlaces } from './api.js';
 import * as coverage from './coverage.js';
 import * as stage from './stage.js';
 import { matchPlan, findView, headingAt } from './street.js';
@@ -25,15 +26,18 @@ export function initDirections(mainMap, navLayer) {
   for (const id of ['dirFrom', 'dirTo', 'dirMe', 'dirForm', 'dirResult', 'dirSwap']) el[id] = document.getElementById(id);
   el.dirFrom.addEventListener('click', () => startPick('from'));
   el.dirTo.addEventListener('click', () => startPick('to'));
-  el.dirMe.addEventListener('click', () => { from = null; renderFields(); compute(); });
+  el.dirMe.addEventListener('click', () => { from = null; names.from = null; renderFields(); compute(); });
   el.dirSwap.addEventListener('click', async () => {
+    const wasPin = !!from;
     const start = from || await myLocation().catch(() => null);
     if (!to || !start) return;
     [from, to] = [to, start];
+    [names.from, names.to] = [names.to, wasPin ? names.from : 'Your location'];
     renderFields();
     compute();
   });
   el.dirForm.addEventListener('change', () => compute());
+  wireSearch();
   coverage.onChange(() => {
     if (!plan) return;
     plan.match = matchPlan(coverage.getIndex(), plan.latlngs);
@@ -41,6 +45,50 @@ export function initDirections(mainMap, navLayer) {
   });
   renderFields();
 }
+
+// ---------- address search ----------
+
+let searchTimer, searchToken = 0;
+function wireSearch() {
+  const input = document.getElementById('dirQuery');
+  const list = document.getElementById('dirResults');
+  input.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    const q = input.value.trim();
+    if (q.length < 3) { list.hidden = true; return; }
+    searchTimer = setTimeout(async () => {
+      const my = ++searchToken;
+      list.hidden = false;
+      list.innerHTML = '<li class="meta">Searching…</li>';
+      try {
+        const results = await searchPlaces(q, map.getCenter());
+        if (my !== searchToken) return;
+        list.innerHTML = results.length ? results.map((r, i) => `
+          <li><div><b>${esc(r.name)}</b><span class="meta">${esc(r.address)}</span></div>
+            <div class="result-actions">
+              <button type="button" class="btn btn-nav btn-sm" data-i="${i}" data-as="to">Go here</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-i="${i}" data-as="from">Start here</button>
+            </div></li>`).join('') : '<li class="meta">No places found. Try adding a city.</li>';
+        list.onclick = (e) => {
+          const b = e.target.closest('button[data-i]');
+          if (!b) return;
+          const r = results[Number(b.dataset.i)];
+          const p = { lat: r.lat, lng: r.lng };
+          if (b.dataset.as === 'from') from = p; else to = p;
+          names[b.dataset.as] = r.name;
+          picking = null;
+          list.hidden = true;
+          input.value = '';
+          renderFields();
+          if (to) compute(); else map.setView([p.lat, p.lng], 17);
+        };
+      } catch (err) {
+        if (my === searchToken) list.innerHTML = `<li class="form-error">${esc(err.message)}</li>`;
+      }
+    }, 350);
+  });
+}
+const names = { from: null, to: null };
 
 function startPick(which) {
   picking = which;
@@ -53,6 +101,7 @@ export function handleMapPick(latlng) {
   if (!picking) return false;
   const p = { lat: latlng.lat, lng: latlng.lng };
   if (picking === 'from') from = p; else to = p;
+  names[picking] = null;
   picking = null;
   renderFields();
   compute();
@@ -61,6 +110,7 @@ export function handleMapPick(latlng) {
 
 export function directionsTo(latlng) {
   to = { lat: latlng.lat, lng: latlng.lng };
+  names.to = null;
   picking = null;
   renderFields();
   compute();
@@ -69,8 +119,8 @@ export function directionsTo(latlng) {
 const fmtPoint = (p) => `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`;
 
 function renderFields() {
-  el.dirFrom.textContent = picking === 'from' ? 'Tap the map…' : from ? `Pin at ${fmtPoint(from)}` : 'Your location';
-  el.dirTo.textContent = picking === 'to' ? 'Tap the map…' : to ? `Pin at ${fmtPoint(to)}` : 'Tap the map to choose a destination';
+  el.dirFrom.textContent = picking === 'from' ? 'Tap the map…' : from ? (names.from || `Pin at ${fmtPoint(from)}`) : 'Your location';
+  el.dirTo.textContent = picking === 'to' ? 'Tap the map…' : to ? (names.to || `Pin at ${fmtPoint(to)}`) : 'Search or tap the map to choose a destination';
   el.dirFrom.classList.toggle('is-picking', picking === 'from');
   el.dirTo.classList.toggle('is-picking', picking === 'to');
   el.dirTo.classList.toggle('is-empty', !to && picking !== 'to');
