@@ -58,6 +58,8 @@ export function makeMap(el, opts = {}) {
     className: 'osm-tiles',
   }).addTo(map);
   if (opts.zoomControl !== false) L.control.zoom({ position: 'bottomright' }).addTo(map);
+  // Directions draw in their own pane so they stay above captured-street lines.
+  map.createPane('navPane').style.zIndex = 450;
   return map;
 }
 
@@ -77,3 +79,67 @@ export function dotIcon(cls = '') {
 }
 
 export const modeWord = { walk: 'walk', bike: 'ride', drive: 'drive' };
+
+// ---- street coverage + navigation drawing ----
+
+// Coverage lines from street.coverageLines(): green where a street was
+// captured both ways, amber (with direction chevrons when zoomed in) where
+// only one way so far. onPick(latlng) fires when a line is tapped.
+export function drawCoverage(layer, lines, { arrows = false, onPick = null } = {}) {
+  layer.clearLayers();
+  for (const l of lines) {
+    const casing = L.polyline(l.latlngs, { className: 'cov-casing', weight: 9, lineCap: 'round', lineJoin: 'round', interactive: !!onPick });
+    const line = L.polyline(l.latlngs, { className: l.both ? 'cov-both' : 'cov-one', weight: 5, lineCap: 'round', lineJoin: 'round', interactive: !!onPick });
+    if (onPick) {
+      for (const p of [casing, line]) p.on('click', (e) => { L.DomEvent.stop(e); onPick(e.latlng); });
+    }
+    layer.addLayer(casing).addLayer(line);
+  }
+  if (!arrows) return;
+  let n = 0;
+  for (const l of lines) {
+    if (l.both) continue;
+    for (let i = 3; i < l.latlngs.length - 1 && n < 400; i += 6, n++) {
+      const a = l.latlngs[i - 1], b = l.latlngs[i + 1];
+      const deg = (Math.atan2((b[1] - a[1]) * Math.cos(a[0] * Math.PI / 180), b[0] - a[0]) * 180) / Math.PI;
+      layer.addLayer(L.marker(l.latlngs[i], { icon: chevronIcon(deg), interactive: false, keyboard: false }));
+    }
+  }
+}
+
+export function chevronIcon(heading) {
+  return L.divIcon({
+    className: 'cov-chevron',
+    html: `<svg viewBox="0 0 12 12" width="12" height="12" style="transform:rotate(${heading.toFixed(0)}deg)"><path d="M2 9 L6 3 L10 9" fill="none" stroke="currentColor" stroke-width="2.4"/></svg>`,
+    iconSize: [12, 12], iconAnchor: [6, 6],
+  });
+}
+
+export function navLine(latlngs) {
+  return L.layerGroup([
+    L.polyline(latlngs, { pane: 'navPane', className: 'nav-casing', weight: 11, lineCap: 'round', lineJoin: 'round', interactive: false }),
+    L.polyline(latlngs, { pane: 'navPane', className: 'nav-line', weight: 6, lineCap: 'round', lineJoin: 'round', interactive: false }),
+  ]);
+}
+
+// "You are here, looking this way": a dot with a view cone.
+export function viewerIcon(heading = 0) {
+  return L.divIcon({
+    className: 'viewer-mark',
+    html: `<svg viewBox="0 0 60 60" width="60" height="60" style="transform:rotate(${(heading || 0).toFixed(0)}deg)">
+      <path d="M30 30 L14 4 A30 30 0 0 1 46 4 Z" class="cone"/>
+      <circle cx="30" cy="30" r="8" class="dot"/></svg>`,
+    iconSize: [60, 60], iconAnchor: [30, 30],
+  });
+}
+
+// Padding for fitBounds that keeps content out from under the side panel
+// (desktop) or the bottom sheet (phones).
+export function fitPadding() {
+  const panel = document.getElementById('panel');
+  if (!panel || panel.offsetParent === null) return { padding: [40, 40] };
+  const r = panel.getBoundingClientRect();
+  return innerWidth < 760
+    ? { paddingTopLeft: [30, 70], paddingBottomRight: [30, innerHeight - r.top + 30] }
+    : { paddingTopLeft: [r.right + 30, 40], paddingBottomRight: [70, 40] };
+}

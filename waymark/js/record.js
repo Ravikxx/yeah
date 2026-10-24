@@ -194,7 +194,7 @@ function setupHudMap() {
   requestAnimationFrame(() => S.hudMap.invalidateSize());
 }
 
-function pickMime() {
+export function pickMime() {
   return MIME_CHOICES.find((m) => MediaRecorder.isTypeSupported?.(m)) || '';
 }
 

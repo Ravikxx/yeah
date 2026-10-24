@@ -4,8 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Waymark</title>
-<meta name="description" content="Watch a real recorded trip with every turn called out, then follow it live with your phone. Record your own routes too.">
+<meta name="description" content="Your own street view. Drive your streets with the camera on, look around anywhere you've been, and preview trips through your own footage.">
 <meta name="theme-color" content="#0B6B4F">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
@@ -14,52 +18,231 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='9' fill='%230B6B4F'/%3E%3Cpath d='M18 42V22l12-12' fill='none' stroke='white' stroke-width='6'/%3E%3Cpath d='M36 4l2 14-14-2z' fill='white'/%3E%3C/svg%3E">
 </head>
 <body>
-<header class="topbar" id="topbar">
-  <a href="#/" class="brand" aria-label="Waymark home">
-    <span class="brand-plate">
-      <svg viewBox="0 0 48 48" width="22" height="22" aria-hidden="true"><path d="M16 44V24l12-12" fill="none" stroke="currentColor" stroke-width="6"/><path d="M36 4l2 15-15-2z" fill="currentColor"/></svg>
-      Waymark
-    </span>
-  </a>
-  <nav class="topnav" aria-label="Sections">
-    <a href="#/" data-nav="routes" class="hide-sm">Routes</a>
-    <a href="#/mine" data-nav="mine">My routes</a>
-  </nav>
-  <a href="#/record" class="btn btn-rec"><span class="rec-dot" aria-hidden="true"></span><span>Record<span class="hide-sm"> a route</span></span></a>
-</header>
+<!-- Map app: full-screen map, floating panel (bottom sheet on phones) -->
+<div id="view-shell" class="view shell">
+  <div id="map" class="map main-map" role="region" aria-label="Map"></div>
 
-<!-- Home: map of routes + list -->
-<main id="view-home" class="view home">
-  <section class="home-intro">
-    <div class="intro-text">
-      <p class="eyebrow">Real trips, recorded on foot, bike and by car</p>
-      <h1>See the way before you go.</h1>
-      <p class="lede">Watch someone make the trip, door to door, with every turn called out on the video. Then follow it live: your phone shows the matching moment as you walk.</p>
+  <aside class="panel" id="panel" aria-label="Waymark">
+    <button class="sheet-handle" id="sheetHandle" type="button" aria-label="Show more" aria-expanded="false"><span></span></button>
+    <div class="panel-head">
+      <a href="#/" class="brand" aria-label="Waymark home"><span class="brand-plate">
+        <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path d="M16 44V24l12-12" fill="none" stroke="currentColor" stroke-width="6"/><path d="M36 4l2 15-15-2z" fill="currentColor"/></svg>
+        Waymark
+      </span></a>
+      <span class="pill" id="uploadPill" data-state="wait" hidden></span>
     </div>
-    <div class="intro-sign" aria-hidden="true">
-      <div class="plate plate-green">
-        <span class="plate-glyph"><svg viewBox="0 0 48 48" width="56" height="56"><path d="M24 46 V26 L32.5 17.5" fill="none" stroke="currentColor" stroke-width="6"/><path d="M38.9 11.1 L38.1 23.1 L26.9 11.9 Z" fill="currentColor"/></svg></span>
-        <span class="plate-text"><b>Bear right</b><small>in 120 ft, past the fountain</small></span>
-      </div>
-      <div class="plate plate-amber">
-        <span class="plate-text"><b>Blue doors are the entrance</b></span>
-      </div>
-    </div>
-  </section>
+    <nav class="tabs" aria-label="Sections">
+      <a href="#/" data-tab="explore">Explore</a>
+      <a href="#/directions" data-tab="directions">Directions</a>
+      <a href="#/routes" data-tab="routes">Routes</a>
+      <a href="#/mine" data-tab="mine">Mine</a>
+    </nav>
 
-  <div class="home-grid">
-    <div class="home-map-wrap"><div id="homeMap" class="map" role="region" aria-label="Map of routes"></div></div>
-    <section class="home-list" aria-labelledby="listTitle">
-      <div class="list-head">
-        <h2 id="listTitle">Routes</h2>
-        <button id="nearMe" class="btn btn-ghost btn-sm" type="button">
-          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-          Closest to me
-        </button>
-      </div>
-      <ol id="routeList" class="route-list" aria-live="polite"></ol>
-    </section>
+    <div class="panel-body">
+      <section class="pane" id="pane-explore">
+        <div class="hello">
+          <p class="eyebrow">Your own street view</p>
+          <h1>Be the <span class="nowrap">street-view</span> car.</h1>
+          <p class="lede">Ride your streets with the camera on, once each way. Then look around any street you’ve covered and preview trips through your own footage.</p>
+          <a class="btn btn-rec btn-lg" href="#/drive"><span class="rec-dot" aria-hidden="true"></span>Drive &amp; capture</a>
+        </div>
+        <div class="legend" aria-label="Map key">
+          <span><i class="lg lg-both"></i>Captured both ways</span>
+          <span><i class="lg lg-one"></i>One way so far</span>
+          <span><i class="lg lg-nav"></i>Your directions</span>
+        </div>
+        <p class="stats" id="covStats"></p>
+        <ol class="how">
+          <li><b>Drive &amp; capture.</b> Mount your phone facing forward and go. Footage uploads in 2-minute pieces.</li>
+          <li><b>Come back the other way.</b> Amber streets have one direction. Ride them back and they turn green.</li>
+          <li><b>Tap a colored street</b> to look around. Step forward, turn around, or turn onto crossing streets.</li>
+          <li><b>Get directions</b> and preview the whole trip through your footage before you leave.</li>
+        </ol>
+      </section>
+
+      <section class="pane" id="pane-directions" hidden>
+        <form class="dir-form" id="dirForm" onsubmit="return false">
+          <div class="dir-fields">
+            <div class="dir-row"><span class="dir-dot a" aria-hidden="true">A</span><button type="button" class="dir-field" id="dirFrom">Your location</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="dirMe" hidden>Use my location</button></div>
+            <div class="dir-row"><span class="dir-dot b" aria-hidden="true">B</span><button type="button" class="dir-field" id="dirTo">Tap the map to choose a destination</button></div>
+            <button type="button" class="dir-swap" id="dirSwap" aria-label="Swap start and destination" title="Swap">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M8 4v15M8 4L4 8M8 4l4 4M16 20V5M16 20l-4-4M16 20l4-4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+            </button>
+          </div>
+          <div class="seg seg-sm" role="group" aria-label="Travel mode">
+            <label><input type="radio" name="dirmode" value="walk"><span>Walk</span></label>
+            <label><input type="radio" name="dirmode" value="bike"><span>Bike</span></label>
+            <label><input type="radio" name="dirmode" value="drive" checked><span>Drive</span></label>
+          </div>
+        </form>
+        <div id="dirResult" aria-live="polite"><p class="meta">Tap anywhere on the map and choose <b>Directions</b>, or tap the B field.</p></div>
+      </section>
+
+      <section class="pane" id="pane-routes" hidden>
+        <div class="list-head">
+          <h2>Routes</h2>
+          <button id="nearMe" class="btn btn-ghost btn-sm" type="button">Closest to me</button>
+        </div>
+        <p class="meta">Point-to-point walkthroughs with notes, like “which door to use”.</p>
+        <a class="btn btn-sm" href="#/record"><span class="rec-dot" aria-hidden="true"></span>Record a route</a>
+        <ol id="routeList" class="route-list" aria-live="polite"></ol>
+      </section>
+
+      <section class="pane" id="pane-mine" hidden>
+        <h2>My footage</h2>
+        <p class="meta" id="queueLine"></p>
+        <ol id="footageList" class="footage-list"></ol>
+        <h2>My routes</h2>
+        <ol id="myRouteList" class="route-list"></ol>
+      </section>
+    </div>
+  </aside>
+
+  <div class="map-tools">
+    <button class="tool" id="locateBtn" type="button" aria-label="Show my location" title="Show my location">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+    </button>
   </div>
+  <p class="map-hint" id="mapHint" hidden>Zoom in to see captured streets</p>
+  <a class="fab" id="fab" href="#/drive"><span class="fab-dot" aria-hidden="true"></span><span>Drive &amp; capture</span></a>
+</div>
+
+<!-- Drive & capture: be the street-view car -->
+<main id="view-drive" class="view drive record" hidden>
+  <video id="dcam" playsinline muted autoplay></video>
+
+  <div class="rec-intro" id="driveIntro">
+    <form class="rec-intro-card" id="driveForm" onsubmit="return false">
+      <div class="plate plate-green plate-wide">
+        <span class="plate-glyph"><span class="rec-dot big" aria-hidden="true"></span></span>
+        <span class="plate-text"><b>Drive &amp; capture</b><small>Be the street-view car</small></span>
+      </div>
+      <ol class="rec-steps">
+        <li><b>Mount your phone facing forward.</b> Dashboard, handlebar or chest. Landscape works best.</li>
+        <li><b>Ride your streets.</b> Video and GPS record nonstop and upload in 2-minute pieces as you go.</li>
+        <li><b>Ride each street both ways.</b> Then street view can look in both directions there. The map shows which streets still need the other way.</li>
+      </ol>
+      <div class="two">
+        <fieldset class="field seg-field">
+          <legend>How you’re traveling</legend>
+          <div class="seg seg-dark">
+            <label><input type="radio" name="dmode" value="walk"><span>Walk</span></label>
+            <label><input type="radio" name="dmode" value="bike"><span>Bike</span></label>
+            <label><input type="radio" name="dmode" value="drive" checked><span>Drive</span></label>
+          </div>
+        </fieldset>
+        <fieldset class="field seg-field">
+          <legend>Who can see the footage</legend>
+          <div class="seg seg-dark">
+            <label><input type="radio" name="dlisted" value="1" checked><span>Everyone</span></label>
+            <label><input type="radio" name="dlisted" value="0"><span>Only me</span></label>
+          </div>
+        </fieldset>
+      </div>
+      <button id="driveStart" class="btn btn-primary btn-lg" type="button">Turn on camera</button>
+      <p class="fine" id="driveError" role="alert" hidden></p>
+      <p class="fine">Uses about 11 MB of data per minute. Don’t touch your phone while driving; set it up before you go.</p>
+      <a href="#/" class="btn btn-ghost">Cancel</a>
+    </form>
+  </div>
+
+  <div class="rec-hud" id="driveHud" hidden>
+    <div class="hud-top">
+      <button class="hud-btn" id="driveClose" type="button" aria-label="Back to the map">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2.5"/></svg>
+      </button>
+      <div class="chips">
+        <span class="chip" id="dGps" data-state="wait">Finding GPS…</span>
+        <span class="chip chip-rec" id="dTime" hidden>0:00</span>
+        <span class="chip" id="dDist" hidden>0 ft</span>
+        <span class="chip" id="dUpload" data-state="wait">Nothing to upload yet</span>
+      </div>
+      <div class="hud-map hud-map-lg" id="driveMap" aria-hidden="true"></div>
+    </div>
+    <div class="street-status" id="streetStatus" role="status" hidden></div>
+    <div class="hud-bottom">
+      <span class="hud-spacer"></span>
+      <button class="rec-btn" id="driveBtn" type="button" aria-label="Start capturing"><span></span></button>
+      <span class="hud-spacer"></span>
+    </div>
+  </div>
+
+  <div class="rec-intro" id="driveDone" hidden>
+    <div class="rec-intro-card">
+      <div class="plate plate-green plate-wide">
+        <span class="plate-glyph"><svg viewBox="0 0 48 48" width="44" height="44" aria-hidden="true"><path d="M10 25l9 9 19-20" fill="none" stroke="currentColor" stroke-width="6"/></svg></span>
+        <span class="plate-text"><b>Capture saved</b><small>Your streets are on the map</small></span>
+      </div>
+      <p id="driveSummary" class="done-text"></p>
+      <div class="actions">
+        <a class="btn btn-primary btn-lg" href="#/">See it on the map</a>
+        <button class="btn btn-on-dark" id="driveAgain" type="button">Keep capturing</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Footage viewer: street view, trip preview, live navigation -->
+<main id="view-stage" class="view stage" hidden>
+  <div class="stage-media">
+    <video id="stageVideo" playsinline muted preload="auto"></video>
+    <div class="stage-loading" id="stageLoading" hidden><span class="spinner" aria-hidden="true"></span>Loading footage…</div>
+    <div class="stage-empty" id="stageEmpty" hidden></div>
+  </div>
+
+  <div class="stage-top">
+    <a class="hud-btn" id="stageExit" href="#/" aria-label="Back to the map" title="Back to the map">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15 4l-8 8 8 8" fill="none" stroke="currentColor" stroke-width="2.6"/></svg>
+    </a>
+    <div class="stage-info" id="stageInfo"></div>
+    <div class="compass" id="compass" aria-hidden="true"><span>N</span></div>
+  </div>
+  <div class="stage-signs">
+    <div class="plate plate-green" id="stageSign" hidden></div>
+    <div class="plate plate-amber" id="stageNote" hidden></div>
+  </div>
+
+  <div class="sv-controls" id="svControls">
+    <div class="sv-pad">
+      <button type="button" class="sv-btn sv-ahead" data-act="ahead" data-label="Go forward (↑)" aria-label="Go forward">
+        <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M4 16l8-8 8 8" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+      </button>
+      <button type="button" class="sv-btn sv-left" data-act="left" data-label="Turn left onto the crossing street (←)" aria-label="Turn left" hidden>
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M20 20v-6a4 4 0 0 0-4-4H5M9 6l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2.8"/></svg>
+      </button>
+      <button type="button" class="sv-btn sv-turn" data-act="turn" data-label="Turn around (U)" aria-label="Turn around">
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M8 20V9a4 4 0 0 1 8 0v6M12 12l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2.6"/></svg>
+      </button>
+      <button type="button" class="sv-btn sv-right" data-act="right" data-label="Turn right onto the crossing street (→)" aria-label="Turn right" hidden>
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M4 20v-6a4 4 0 0 1 4-4h11M15 6l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2.8"/></svg>
+      </button>
+      <button type="button" class="sv-btn sv-back" data-act="back" data-label="Go back (↓)" aria-label="Go back">
+        <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M4 8l8 8 8-8" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+      </button>
+    </div>
+    <button type="button" class="sv-drive" data-act="drive" data-label="Drive along the footage (Space)">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M7 4l13 8-13 8z" fill="currentColor"/></svg>
+      <span class="lbl">Drive</span>
+    </button>
+    <p class="turn-hint" hidden>Only one direction captured here. Ride it back to unlock Turn around.</p>
+  </div>
+
+  <div class="nav-controls" id="navControls" hidden>
+    <div class="nav-prog"><span id="navProg"></span></div>
+    <div class="nav-row">
+      <button type="button" class="btn btn-on-dark" id="navPlay"><span class="lbl">Pause</span></button>
+      <div class="seg seg-sm seg-dark" id="navSpeed" role="group" aria-label="Preview speed">
+        <label><input type="radio" name="navspeed" value="1"><span>1×</span></label>
+        <label><input type="radio" name="navspeed" value="2" checked><span>2×</span></label>
+        <label><input type="radio" name="navspeed" value="4"><span>4×</span></label>
+      </div>
+      <span class="nav-status" id="navStatus"></span>
+      <button type="button" class="btn btn-danger" id="navEnd" hidden>End</button>
+    </div>
+  </div>
+
+  <div class="stage-mini" id="stageMini" role="region" aria-label="Mini map. Tap a street to jump there."></div>
 </main>
 
 <!-- Recorder -->
@@ -181,6 +364,18 @@
     </div>
   </div>
 </main>
+
+<header class="topbar" id="topbar" hidden>
+  <a href="#/" class="brand" aria-label="Waymark home"><span class="brand-plate">
+        <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path d="M16 44V24l12-12" fill="none" stroke="currentColor" stroke-width="6"/><path d="M36 4l2 15-15-2z" fill="currentColor"/></svg>
+        Waymark
+      </span></a>
+  <nav class="topnav" aria-label="Sections">
+    <a href="#/">Map</a>
+    <a href="#/routes">Routes</a>
+  </nav>
+  <a href="#/drive" class="btn btn-rec"><span class="rec-dot" aria-hidden="true"></span><span>Drive<span class="hide-sm"> &amp; capture</span></span></a>
+</header>
 
 <!-- Route player -->
 <main id="view-route" class="view route" hidden>

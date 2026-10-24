@@ -12,7 +12,7 @@ async function request(path, opts = {}) {
     throw new Error('Can’t reach the Waymark server. Check your connection and try again.');
   }
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || `Server error (${res.status})`);
+  if (!res.ok) throw Object.assign(new Error(body.error || `Server error (${res.status})`), { status: res.status });
   return body;
 }
 
@@ -20,6 +20,9 @@ export const listRoutes = () => request('/api/routes').then((b) => b.routes);
 export const getRoute = (id) => request(`/api/routes/${encodeURIComponent(id)}`);
 export const getDirections = (mode, from, to) =>
   request(`/api/directions?mode=${mode}&from=${from.lat.toFixed(6)},${from.lng.toFixed(6)}&to=${to.lat.toFixed(6)},${to.lng.toFixed(6)}`);
+export const getCoverage = ([w, s, e, n], ids = []) =>
+  request(`/api/coverage?bbox=${[w, s, e, n].map((v) => v.toFixed(5)).join(',')}${ids.length ? `&ids=${ids.join(',')}` : ''}`)
+    .then((b) => b.segments);
 export const videoUrl = (id) => `${API_BASE}/api/routes/${encodeURIComponent(id)}/video`;
 export const thumbUrl = (id) => `${API_BASE}/api/routes/${encodeURIComponent(id)}/thumb`;
 
@@ -32,15 +35,26 @@ function saveMine(m) {
 export const ownerToken = (id) => mine()[id]?.token || null;
 
 // Uploads a finished recording. onProgress(0..1) tracks the video upload.
-export async function uploadRoute({ meta, video, thumb }, onProgress = () => {}) {
-  const { id, ownerToken: token } = await request('/api/routes', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...meta, videoType: video.type, videoBytes: video.size }),
-  });
-  const m = mine();
-  m[id] = { token, title: meta.title, createdAt: Date.now() };
-  saveMine(m);
+// `created` ({id, token}) resumes an upload whose record already exists, and
+// onCreated hears about a new one, so a retry never makes a duplicate.
+export async function uploadRoute({ meta, video, thumb, created = null }, onProgress = () => {}, onCreated = () => {}) {
+  let id = created?.id, token = created?.token;
+  if (!id) {
+    ({ id, ownerToken: token } = await request('/api/routes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...meta, videoType: video.type, videoBytes: video.size }),
+    }));
+    const m = mine();
+    const lats = (meta.track || []).map((p) => p[1]), lngs = (meta.track || []).map((p) => p[2]);
+    m[id] = {
+      token, title: meta.title || '', kind: meta.kind || 'route', session: meta.session || null,
+      listed: meta.listed !== false, createdAt: Date.now(),
+      bbox: lats.length ? [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)] : null,
+    };
+    saveMine(m);
+    await onCreated({ id, token });
+  }
 
   await new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -52,7 +66,7 @@ export async function uploadRoute({ meta, video, thumb }, onProgress = () => {})
       if (xhr.status >= 200 && xhr.status < 300) return resolve();
       let msg = `Video upload failed (${xhr.status})`;
       try { msg = JSON.parse(xhr.responseText).error || msg; } catch { /* keep default */ }
-      reject(new Error(msg));
+      reject(Object.assign(new Error(msg), { status: xhr.status }));
     };
     xhr.onerror = () => reject(new Error('The video upload was interrupted. Check your connection and try again.'));
     xhr.send(video);
@@ -67,9 +81,13 @@ export async function uploadRoute({ meta, video, thumb }, onProgress = () => {})
 }
 
 export async function deleteRoute(id) {
-  await request(`/api/routes/${encodeURIComponent(id)}`, {
-    method: 'DELETE', headers: { Authorization: `Bearer ${ownerToken(id)}` },
-  });
+  try {
+    await request(`/api/routes/${encodeURIComponent(id)}`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${ownerToken(id)}` },
+    });
+  } catch (err) {
+    if (err.status !== 404) throw err; // already gone: just forget it locally
+  }
   const m = mine();
   delete m[id];
   saveMine(m);

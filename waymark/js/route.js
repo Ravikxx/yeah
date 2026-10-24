@@ -1,5 +1,6 @@
 import { getRoute, getDirections, videoUrl, ownerToken, deleteRoute } from './api.js';
 import { $, esc, makeMap, routeLine, pinIcon, dotIcon, toast, cueGlyph, arrowGlyph, modeWord } from './ui.js';
+import { stepText, compass } from './directions.js';
 import { prepareTrack, buildCues, atTime, snapToTrack, distance, bearing, formatDistance, formatDuration, formatClock } from './geo.js';
 
 const GMAPS_MODE = { walk: 'walking', bike: 'bicycling', drive: 'driving' };
@@ -201,9 +202,6 @@ function loop() {
   raf = requestAnimationFrame(step);
 }
 
-const COMPASS = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'];
-const compass = (deg) => COMPASS[Math.round(deg / 45) % 8];
-
 // Updates the sign, the dot, the timeline, and the cue list for the video's current moment.
 function sync() {
   const t = el.rtVideo.currentTime || 0;
@@ -359,7 +357,7 @@ function directionsToStart() {
       if (R.approach) R.approach.remove();
       R.approach = L.polyline(ll, { className: 'route-ghost', weight: 5 }).addTo(layers);
       map.fitBounds([...ll, ...R.pts.map((p) => [p.lat, p.lng])], { padding: [30, 30] });
-      const steps = r.legs[0].steps.map(stepText).filter(Boolean);
+      const steps = r.legs[0].steps.map((s) => stepText(s, { arriveText: 'Arrive at the start of the route' }));
       el.toStart.innerHTML = `
         <h3>${formatDistance(r.distance)} · ${formatDuration(r.duration)} to the start</h3>
         <ol>${steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>
@@ -379,24 +377,6 @@ function directionsToStart() {
     btn.textContent = 'Directions to start';
     toast(err.code === 1 ? 'Location is blocked. Allow it for this site to get directions.' : 'Couldn’t get your location. Try again.');
   }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
-}
-
-function stepText(s) {
-  const m = s.maneuver || {};
-  const name = s.name ? ` onto ${s.name}` : '';
-  const dist = s.distance > 0 ? ` · ${formatDistance(s.distance)}` : '';
-  switch (m.type) {
-    case 'depart': return `Head ${compass(m.bearing_after || 0)}${s.name ? ` on ${s.name}` : ''}${dist}`;
-    case 'arrive': return 'Arrive at the start of the route';
-    case 'roundabout': case 'rotary': return `At the roundabout, take exit ${m.exit || 1}${name}${dist}`;
-    default: {
-      const mod = m.modifier || 'straight';
-      if (mod === 'straight') return `Continue straight${name}${dist}`;
-      if (mod === 'uturn') return `Make a U-turn${name}${dist}`;
-      const verb = mod.startsWith('slight') ? `Bear ${mod.replace('slight ', '')}` : mod.startsWith('sharp') ? `Sharp ${mod.replace('sharp ', '')}` : `Turn ${mod}`;
-      return `${verb}${name}${dist}`;
-    }
-  }
 }
 
 // ---------- share / delete ----------
