@@ -551,6 +551,7 @@ fieldset.field legend { padding: 0; margin-bottom: 6px; }
   padding: 8px 10px; border-radius: 14px; background: rgb(0 0 0 / .6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
 }
 .mission-pick { display: flex; align-items: center; gap: 6px; color: #fff; font-weight: 700; font-size: .85rem; }
+.mission-pick input[type=checkbox] { width: 20px; height: 20px; min-height: 0; accent-color: #5B8EFF; }
 .mission-pick select { min-height: 36px; border-radius: 8px; border: 1.5px solid rgb(255 255 255 / .5); background: #16251F; color: #fff; font: 700 .9rem var(--f-body); padding: 0 6px; }
 .mission-sign { position: absolute; left: max(16px, env(safe-area-inset-left)); top: calc(max(12px, env(safe-area-inset-top)) + 64px); max-width: min(28rem, calc(100% - 210px)); }
 .mission-sign .plate-text b { font-size: 1.5rem; }

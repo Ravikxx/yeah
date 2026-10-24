@@ -343,6 +343,11 @@ async function newMission() {
   btn.disabled = true;
   btn.textContent = 'Finding a place…';
   try {
+    if (document.getElementById('missionStreet').checked) {
+      if (await sameStreetMission(fix, radius)) return;
+      toast('Couldn’t find a stretch of this street that far without turning. Try a shorter distance.');
+      return;
+    }
     for (let tries = 0; tries < 5; tries++) {
       // Somewhere between 40% and 100% of the radius away, any direction.
       const dist = radius * (0.4 + 0.6 * Math.random()), deg = Math.random() * 360;
@@ -364,6 +369,35 @@ async function newMission() {
     btn.disabled = false;
     btn.textContent = 'New destination';
   }
+}
+
+// "This street only": a destination straight along the street you're on.
+// Tries straight ahead first (or every direction if you're not moving yet)
+// and keeps the first route that never leaves the starting street.
+async function sameStreetMission(fix, radius) {
+  const dirs = S.heading != null
+    ? [S.heading, (S.heading + 180) % 360]
+    : [0, 45, 90, 135, 180, 225, 270, 315];
+  for (const deg of dirs) {
+    for (const f of [1, 0.75, 0.5]) {
+      const dist = radius * f;
+      const dest = {
+        lat: fix.lat + (dist * Math.cos(deg * Math.PI / 180)) / 111320,
+        lng: fix.lng + (dist * Math.sin(deg * Math.PI / 180)) / (111320 * Math.cos(fix.lat * Math.PI / 180)),
+      };
+      let trip;
+      try { trip = await planTrip(S.mode, fix, dest); } catch { continue; }
+      const road = trip.steps[0]?.name;
+      const turns = trip.steps.slice(1).filter((s) => s.maneuver?.type !== 'arrive');
+      const sameStreet = road && turns.every((s) => s.name === road && !/uturn|sharp/.test(s.maneuver?.modifier || ''));
+      if (sameStreet && trip.distance >= Math.min(100, radius * 0.4) && trip.distance <= radius * 1.4) {
+        startMission(trip, radius);
+        toast(`Stay on ${road} for ${formatDistance(trip.distance)}.`);
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function startMission(trip, radius) {
