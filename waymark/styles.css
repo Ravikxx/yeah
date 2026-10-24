@@ -545,6 +545,13 @@ fieldset.field legend { padding: 0; margin-bottom: 6px; }
 .hud-map-lg { width: 170px; height: 170px; }
 @media (orientation: landscape) and (min-width: 700px) { .hud-map-lg { width: 240px; height: 200px; } }
 .hud-spacer { width: 76px; }
+.loc-help {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(26rem, calc(100% - 32px));
+  display: grid; gap: 10px; justify-items: start; padding: 16px 18px; border-radius: 14px;
+  background: #0E1A15; border: 2px solid #FF4D3F; color: #fff; font-size: .95rem; line-height: 1.4;
+}
+.loc-help ol { margin: 0; padding-left: 1.2rem; display: grid; gap: 8px; }
+.loc-help p { margin: 0; }
 .street-status {
   position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(140px + env(safe-area-inset-bottom, 0px));
   max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 12px; text-align: center;

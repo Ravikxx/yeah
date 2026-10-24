@@ -92,6 +92,7 @@ async function start() {
     return showCamError('This browser can’t record video. Try a recent Chrome, Safari or Firefox.');
   }
   el.camStart.disabled = true;
+  startGps(); // ask for location inside the tap, before the camera prompt (iPhone only prompts then)
   try {
     await startCamera();
   } catch (err) {
@@ -99,7 +100,6 @@ async function start() {
     return showCamError(cameraErrorText(err));
   }
   el.camStart.disabled = false;
-  startGps();
   el.intro.hidden = true;
   el.hud.hidden = false;
   setupHudMap();

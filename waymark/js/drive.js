@@ -78,6 +78,7 @@ async function start() {
   S.mode = f.dmode.value;
   S.listed = f.dlisted.value === '1';
   el.driveStart.disabled = true;
+  startGps(); // ask for location right away, while the tap still counts (iPhone only prompts then)
   try {
     S.stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
@@ -92,7 +93,6 @@ async function start() {
   el.driveStart.disabled = false;
   el.dcam.srcObject = S.stream;
   el.dcam.play().catch(() => {});
-  startGps();
   el.intro.hidden = true;
   el.hud.hidden = false;
   setupMap();
@@ -114,9 +114,27 @@ function stopCamera() {
 function startGps() {
   stopGps();
   if (!navigator.geolocation) { setGps('bad', 'No GPS'); return; }
-  S.watchId = navigator.geolocation.watchPosition(onFix, (err) => {
+  S.watchId = navigator.geolocation.watchPosition((pos) => { hideLocationHelp(); onFix(pos); }, (err) => {
     setGps('bad', err.code === 1 ? 'Location blocked' : 'GPS unavailable');
+    if (err.code === 1) showLocationHelp();
   }, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
+}
+
+const IS_APPLE = /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent) && 'ontouchend' in document;
+function showLocationHelp() {
+  const box = document.getElementById('locHelp');
+  box.innerHTML = `<b>Location is blocked for this site</b>
+    ${IS_APPLE ? `<ol>
+      <li>Open <b>Settings → Privacy &amp; Security → Location Services</b>. Make sure it’s on, then tap <b>Safari Websites</b> and choose <b>While Using the App</b> with <b>Precise Location</b> on.</li>
+      <li>Back in Safari, tap the page-settings button left of the address, then <b>Website Settings → Location → Allow</b>.</li>
+    </ol>` : `<p>Tap the icon left of the address bar, then <b>Permissions → Location → Allow</b>.</p>`}
+    <button type="button" class="btn btn-primary btn-sm" id="locRetry">Try again</button>`;
+  box.hidden = false;
+  document.getElementById('locRetry').onclick = () => { setGps('wait', 'Finding GPS…'); startGps(); };
+}
+function hideLocationHelp() {
+  const box = document.getElementById('locHelp');
+  if (box) box.hidden = true;
 }
 
 function stopGps() {
