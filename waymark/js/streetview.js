@@ -42,6 +42,7 @@ async function start(lat, lng, heading) {
   const pos = { lat, lng };
   const v = (heading != null && findView(idx, pos, heading)) || findView(idx, pos, null, { radius: 40 });
   if (!v) {
+    stage.reset(); // don't leave the last place's footage behind the message
     stage.setInfo('');
     stage.showEmpty(`<h3>No street view here yet</h3>
       <p>This street hasn’t been captured. Drive it with the camera on, once each way, and you’ll be able to look both directions here.</p>
