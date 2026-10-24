@@ -105,17 +105,30 @@ function stepAlong(view, delta) {
 
 // Splits recordings into map lines tagged by how the street is covered:
 // both = recorded in each direction, one = only this way so far.
-export function coverageLines(index, { step = 10, radius = 15 } = {}) {
+// Several passes over the same street (the two directions sit a lane or
+// more apart, plus GPS drift) are drawn as ONE line: a sample is drawn only
+// if its recording has the smallest id among all passes along that street
+// there, in either direction. Crossing streets don't count as the same street.
+export function coverageLines(index, { step = 10, radius = 20 } = {}) {
   const lines = [];
   for (const seg of index.segs) {
     let run = null;
     for (let k = 0; k < seg.samples.length; k += Math.max(1, Math.round(step / SAMPLE_M))) {
       const s = seg.samples[k];
-      let both = false;
+      let both = false, drawn = true;
       for (const o of nearby(index, s, radius)) {
-        if (o.seg === seg && Math.abs(o.d - s.d) < 40) continue;
-        if (distance(s, o) <= radius && Math.abs(turnAngle(s.heading, o.heading)) >= 135) { both = true; break; }
+        if (o.seg === seg || distance(s, o) > radius) continue;
+        const turn = Math.abs(turnAngle(s.heading, o.heading));
+        if (turn >= 135) both = true;
+        if ((turn >= 135 || turn <= 45) && o.seg.id < seg.id) drawn = false;
       }
+      // A U-turn within one recording also covers both ways.
+      if (!both) {
+        for (const o of nearby(index, s, radius)) {
+          if (o.seg === seg && Math.abs(o.d - s.d) >= 40 && distance(s, o) <= radius && Math.abs(turnAngle(s.heading, o.heading)) >= 135) { both = true; break; }
+        }
+      }
+      if (!drawn) { run = null; continue; }
       if (!run || run.both !== both) {
         if (run) run.latlngs.push([s.lat, s.lng]); // join runs so the line has no gaps
         run = { id: seg.id, both, heading: s.heading, latlngs: [] };
@@ -156,30 +169,31 @@ export function matchPlan(index, planLatLngs, { step = 10 } = {}) {
 }
 
 // Street length covered by coverage lines (as from coverageLines), counting
-// a stretch once however many passes went over it. `inView(lat, lng)` limits
-// the count to an area. Returns meters: { any, both }.
-export function coveredLength(lines, inView = () => true, { step = 10, near = 8 } = {}) {
-  const cell = 0.0001;
-  const kept = { any: new Map(), both: new Map() };
-  const take = (grid, lat, lng) => {
+// a stretch once however many lines run along it. A sample adds `step`
+// meters unless a sample already counted from a DIFFERENT line lies within
+// `near` meters. `inView(lat, lng)` limits the count to an area.
+export function coveredLength(lines, inView = () => true, { step = 10, near = 15 } = {}) {
+  const cell = 0.0002;
+  const grids = { any: new Map(), both: new Map() };
+  const take = (grid, lat, lng, line) => {
     const ci = Math.floor(lat / cell), cj = Math.floor(lng / cell);
     for (let i = ci - 1; i <= ci + 1; i++) {
       for (let j = cj - 1; j <= cj + 1; j++) {
-        for (const p of grid.get(`${i}:${j}`) || []) if (distance(p, { lat, lng }) < near) return false;
+        for (const p of grid.get(`${i}:${j}`) || []) if (p.line !== line && distance(p, { lat, lng }) < near) return false;
       }
     }
     const k = `${ci}:${cj}`;
     if (!grid.has(k)) grid.set(k, []);
-    grid.get(k).push({ lat, lng });
+    grid.get(k).push({ lat, lng, line });
     return true;
   };
   let any = 0, both = 0;
-  for (const l of lines) {
+  lines.forEach((l, n) => {
     for (const [lat, lng] of l.latlngs) {
       if (!inView(lat, lng)) continue;
-      if (take(kept.any, lat, lng)) any += step;
-      if (l.both && take(kept.both, lat, lng)) both += step;
+      if (take(grids.any, lat, lng, n)) any += step;
+      if (l.both && take(grids.both, lat, lng, n)) both += step;
     }
-  }
+  });
   return { any, both };
 }
