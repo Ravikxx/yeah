@@ -10,12 +10,15 @@ import { findView } from './street.js';
 import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js';
 import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js';
 import { coverageLines } from './street.js';
+import { planTrip } from './directions.js';
+import { snapToTrack } from './geo.js';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
 })();
 const MIN_CHUNK_METERS = 10;      // skip pieces where you barely moved; a short last piece is still real footage
-const VIDEO_BPS = 1_500_000;      // ~11 MB a minute
+const VIDEO_BPS = 500_000;        // ~4 MB a minute; plenty for 480p at 15 fps
 
 const S = {
   stream: null, watchId: null, lastFix: null, heading: null,
@@ -60,6 +63,8 @@ function wire() {
   el.driveStart.addEventListener('click', start);
   el.driveBtn.addEventListener('click', () => (S.capturing ? stopCapture() : startCapture()));
   el.driveClose.addEventListener('click', () => { location.hash = '#/'; });
+  document.getElementById('missionBtn').addEventListener('click', newMission);
+  document.getElementById('missionEnd').addEventListener('click', () => endMission('Trip ended.'));
   el.driveAgain.addEventListener('click', () => {
     el.done.hidden = true;
     if (S.stream) el.hud.hidden = false; else el.intro.hidden = false;
@@ -81,7 +86,8 @@ async function start() {
   startGps(); // ask for location right away, while the tap still counts (iPhone only prompts then)
   try {
     S.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+      // 640x480 at 15 fps (never over 24): far less battery than 720p30, still enough for street view and training.
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15, max: 24 } },
       audio: false,
     });
   } catch (err) {
@@ -179,6 +185,7 @@ function onFix(pos) {
     }
   }
   maybeLoadCoverage(fix);
+  missionFix(fix);
   renderStreetStatus(fix);
 }
 
@@ -248,7 +255,7 @@ function startCapture() {
 function newChunk() {
   const mimeType = pickMime();
   const rec = new MediaRecorder(S.stream, { ...(mimeType && { mimeType }), videoBitsPerSecond: VIDEO_BPS });
-  const chunk = { rec, parts: [], track: [], t0: performance.now(), startedAt: Date.now() };
+  const chunk = { rec, parts: [], track: [], nav: [], t0: performance.now(), startedAt: Date.now() };
   // Start the piece where you are, so pieces join up on the map.
   if (S.lastFix && performance.now() - S.lastFix.at < 10000) {
     chunk.track.push({ t: 0, lat: S.lastFix.lat, lng: S.lastFix.lng, acc: S.lastFix.acc });
@@ -283,6 +290,7 @@ async function finishChunk(chunk) {
     meta: {
       kind: 'capture', mode: S.mode, listed: S.listed, session: S.session,
       title: '', track: chunk.track.map((p) => [p.t, p.lat, p.lng, p.acc, p.speed ?? null, p.heading ?? null]),
+      nav: chunk.nav,
     },
     createdAt: chunk.startedAt,
   });
@@ -317,4 +325,126 @@ function renderUpload(st) {
   el.dUpload.textContent = text;
   el.dUpload.dataset.state = state;
   el.dUpload.title = st.lastError || '';
+}
+
+// ---------- trips: "drive to a random place near me" ----------
+// Picks a destination within the chosen radius and gives normal turn-by-turn
+// directions. While capturing, every GPS fix logs the road you're on and the
+// instruction you were following; it's saved with the footage for training.
+
+const M = { plan: null, layer: null, lastD: null, off: 0, rerouting: false };
+const MI = 1609.344;
+
+async function newMission() {
+  const fix = S.lastFix;
+  const btn = document.getElementById('missionBtn');
+  if (!fix) { toast('Waiting for GPS before picking a destination.'); return; }
+  const radius = Number(document.getElementById('missionRadius').value) * MI;
+  btn.disabled = true;
+  btn.textContent = 'Finding a place…';
+  try {
+    for (let tries = 0; tries < 5; tries++) {
+      // Somewhere between 40% and 100% of the radius away, any direction.
+      const dist = radius * (0.4 + 0.6 * Math.random()), deg = Math.random() * 360;
+      const dest = {
+        lat: fix.lat + (dist * Math.cos(deg * Math.PI / 180)) / 111320,
+        lng: fix.lng + (dist * Math.sin(deg * Math.PI / 180)) / (111320 * Math.cos(fix.lat * Math.PI / 180)),
+      };
+      let trip;
+      try { trip = await planTrip(S.mode, fix, dest); } catch { continue; }
+      const end = trip.latlngs[trip.latlngs.length - 1];
+      // The router snaps to the nearest road; skip spots it can't reach sensibly.
+      if (trip.distance < 150 || distance(fix, { lat: end[0], lng: end[1] }) > radius * 1.1 || trip.distance > radius * 3) continue;
+      startMission(trip, radius);
+      if (!S.capturing) toast('Destination set. Tap the red button to start capturing, then follow the directions.');
+      return;
+    }
+    toast('Couldn’t find a reachable spot. Try again or pick a bigger distance.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'New destination';
+  }
+}
+
+function startMission(trip, radius) {
+  M.plan = trip;
+  M.plan.pts = prepareTrack(trip.latlngs.map(([lat, lng], i) => [i, lat, lng, null]));
+  M.radius = radius;
+  M.lastD = null;
+  M.off = 0;
+  if (M.layer) M.layer.remove();
+  M.layer = L.layerGroup([navLine(trip.latlngs), L.marker(trip.latlngs[trip.latlngs.length - 1], { icon: pinIcon('B', 'nav end') })]).addTo(S.map);
+  S.map.setZoom(15);
+  document.getElementById('missionEnd').hidden = false;
+  if (S.lastFix) missionFix(S.lastFix);
+}
+
+function endMission(message) {
+  M.plan = null;
+  if (M.layer) { M.layer.remove(); M.layer = null; }
+  document.getElementById('missionSign').hidden = true;
+  document.getElementById('missionEnd').hidden = true;
+  if (message) toast(message);
+}
+
+function setMissionSign(html) {
+  const el = document.getElementById('missionSign');
+  el.hidden = !html;
+  if (html) el.innerHTML = `<div class="plate plate-green">${html}</div>`;
+}
+
+// The step you're on now (its road name is the road you're driving).
+function current(plan, d) {
+  let cur = plan.steps[0];
+  for (const s of plan.steps) if (s.at <= d + 1) cur = s;
+  return cur;
+}
+
+async function missionFix(fix) {
+  const plan = M.plan;
+  if (!plan) return;
+  const snap = snapToTrack(plan.pts, fix, M.lastD);
+  if (!snap || snap.off > 50) {
+    setMissionSign('<span class="plate-text"><b>Off route</b><small>Finding a new way…</small></span>');
+    logNav(fix, null, plan, null, null);
+    if (++M.off >= 2 && !M.rerouting) {
+      M.rerouting = true;
+      try {
+        const trip = await planTrip(S.mode, fix, plan.to);
+        if (M.plan === plan) startMission(trip, M.radius);
+      } catch { /* try again on the next fix */ }
+      M.rerouting = false;
+    }
+    return;
+  }
+  M.off = 0;
+  M.lastD = snap.d;
+  const left = plan.distance - snap.d;
+  const cur = current(plan, snap.d);
+  if (left < 30) {
+    logNav(fix, cur, plan, { title: 'Arrive', at: plan.distance }, snap.d);
+    setMissionSign(`<span class="plate-glyph">${cueGlyph({ type: 'arrive' })}</span><span class="plate-text"><b>You’ve arrived</b><small>Pick a new destination to keep going</small></span>`);
+    M.plan = null;
+    document.getElementById('missionEnd').hidden = true;
+    setTimeout(() => { if (!M.plan) endMission(); }, 8000);
+    return;
+  }
+  const next = plan.steps.find((s) => s.maneuver?.type !== 'depart' && s.at > snap.d + 3);
+  logNav(fix, cur, plan, next, snap.d);
+  if (!next) return;
+  const dist = next.at - snap.d;
+  const glyph = next.angle === 'arrive' ? cueGlyph({ type: 'arrive' }) : arrowGlyph(next.angle);
+  setMissionSign(`<span class="plate-glyph">${glyph}</span><span class="plate-text"><b>${esc(next.title)}</b>
+    <small>${esc([dist < 20 ? 'Now' : `In ${formatDistance(dist)}`, next.name].filter(Boolean).join(' · '))} · ${esc(formatDistance(left))} to go</small></span>`);
+}
+
+function logNav(fix, cur, plan, next, d) {
+  if (!S.capturing || !S.chunk) return;
+  S.chunk.nav.push({
+    t: (fix.at - S.chunk.t0) / 1000,
+    road: cur?.name || '',
+    next: next ? next.title + (next.name ? ` onto ${next.name}` : '') : (d === null ? 'Off route' : ''),
+    nextIn: next && d !== null ? next.at - d : null,
+    left: d !== null ? plan.distance - d : null,
+  });
 }

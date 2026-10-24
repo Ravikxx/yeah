@@ -157,7 +157,7 @@
       </div>
       <button id="driveStart" class="btn btn-primary btn-lg" type="button">Turn on camera</button>
       <p class="fine" id="driveError" role="alert" hidden></p>
-      <p class="fine">Uses about 11 MB of data per minute. Don’t touch your phone while driving; set it up before you go.</p>
+      <p class="fine">Uses about 4 MB of data per minute. Don’t touch your phone while driving; set it up before you go.</p>
       <a href="#/" class="btn btn-ghost">Cancel</a>
     </form>
   </div>
@@ -176,7 +176,20 @@
       <div class="hud-map hud-map-lg" id="driveMap" aria-hidden="true"></div>
     </div>
     <div class="loc-help" id="locHelp" role="alert" hidden></div>
+    <div class="mission-sign" id="missionSign" hidden></div>
     <div class="street-status" id="streetStatus" role="status" hidden></div>
+    <div class="mission-bar">
+      <label class="mission-pick"><span>Destination within</span>
+        <select id="missionRadius" aria-label="How far away the destination can be">
+          <option value="0.5" selected>0.5 mi</option><option value="1">1 mi</option><option value="2">2 mi</option>
+          <option value="3">3 mi</option><option value="4">4 mi</option><option value="5">5 mi</option>
+          <option value="6">6 mi</option><option value="7">7 mi</option><option value="8">8 mi</option>
+          <option value="9">9 mi</option><option value="10">10 mi</option>
+        </select>
+      </label>
+      <button type="button" class="btn btn-nav btn-sm" id="missionBtn">New destination</button>
+      <button type="button" class="btn btn-on-dark btn-sm" id="missionEnd" hidden>End trip</button>
+    </div>
     <div class="hud-bottom">
       <span class="hud-spacer"></span>
       <button class="rec-btn" id="driveBtn" type="button" aria-label="Start capturing"><span></span></button>

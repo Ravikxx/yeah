@@ -119,7 +119,7 @@ function cameraErrorText(err) {
 
 async function startCamera() {
   stopCamera();
-  const video = { facingMode: { ideal: S.facing }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } };
+  const video = { facingMode: { ideal: S.facing }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15, max: 24 } };
   try {
     S.stream = await navigator.mediaDevices.getUserMedia({ video, audio: true });
     S.hasAudio = true;
@@ -206,7 +206,7 @@ async function startRecording() {
   try {
     S.recorder = new MediaRecorder(S.stream, {
       ...(mimeType && { mimeType }),
-      videoBitsPerSecond: 1_200_000,
+      videoBitsPerSecond: 500_000,
       ...(S.hasAudio && { audioBitsPerSecond: 64_000 }),
     });
   } catch (err) {

@@ -16,6 +16,7 @@ Output:
   data/manifest.json                 everything the server returned
   data/<id>/video.mp4|webm           the footage
   data/<id>/telemetry.csv            one row per GPS fix
+  data/<id>/directions.csv           road + instruction followed (destination trips)
   data/<id>/frames/000001.jpg ...    with --fps
   data/frames.csv                    one row per frame, all recordings
 """
@@ -137,7 +138,13 @@ def main():
             for p in pts:
                 w.writerow([fmt(p['t']), fmt(p['lat'], 7), fmt(p['lng'], 7), fmt(p['acc'], 1), fmt(p['speed']), fmt(p['heading'], 1),
                             fmt(p['gps_speed']), fmt(p['gps_heading'], 1), fmt(p['dist'], 1)])
-        meta = {k: v for k, v in r.items() if k != 'track'}
+        if r.get('nav'):
+            with open(os.path.join(d, 'directions.csv'), 'w', newline='') as f:
+                w = csv.writer(f)
+                w.writerow(['t_s', 'road', 'instruction', 'instruction_in_m', 'destination_in_m'])
+                for e in r['nav']:
+                    w.writerow([e['t'], e.get('road', ''), e.get('next', ''), fmt(e.get('nextIn'), 0), fmt(e.get('left'), 0)])
+        meta = {k: v for k, v in r.items() if k not in ('track', 'nav')}
         with open(os.path.join(d, 'meta.json'), 'w') as f:
             json.dump(meta, f, indent=1)
         line = f'[{n}/{len(recs)}] {rid}: {"downloaded" if got else "already here"}, {len(pts)} GPS fixes, {r.get("mode")}, {r.get("kind")}'
@@ -156,17 +163,21 @@ def main():
             files = sorted(x for x in os.listdir(fd) if x.endswith('.jpg'))
             if len(times) != len(files):
                 sys.exit(f'{rid}: got {len(files)} frames but {len(times)} timestamps from ffmpeg; not labeling them wrongly')
+            nav = sorted(r.get('nav') or [], key=lambda n: n['t'])
             for fn, t in zip(files, times):
                 p = at_time(pts, t)
+                n = next((e for e in reversed(nav) if e['t'] <= t + 0.5), None)  # directions shown at this moment
                 frame_rows.append([os.path.join(rid, 'frames', fn), rid, round(t, 3), fmt(p['lat'], 7), fmt(p['lng'], 7),
-                                   fmt(p['speed']), fmt(p['heading'], 1), fmt(p['acc'], 1), r.get('mode'), r.get('kind'), r.get('createdAt')])
+                                   fmt(p['speed']), fmt(p['heading'], 1), fmt(p['acc'], 1), r.get('mode'), r.get('kind'), r.get('createdAt'),
+                                   (n or {}).get('road', ''), (n or {}).get('next', ''), fmt((n or {}).get('nextIn'), 0), fmt((n or {}).get('left'), 0)])
             line += f', {len(files)} frames'
         print(line)
 
     if frame_rows:
         with open(os.path.join(a.out, 'frames.csv'), 'w', newline='') as f:
             w = csv.writer(f)
-            w.writerow(['frame', 'recording', 't_s', 'lat', 'lng', 'speed_mps', 'heading_deg', 'accuracy_m', 'mode', 'kind', 'recorded_at_ms'])
+            w.writerow(['frame', 'recording', 't_s', 'lat', 'lng', 'speed_mps', 'heading_deg', 'accuracy_m', 'mode', 'kind', 'recorded_at_ms',
+                        'road', 'instruction', 'instruction_in_m', 'destination_in_m'])
             w.writerows(frame_rows)
         print(f'frames.csv: {len(frame_rows)} labeled frames')
 
