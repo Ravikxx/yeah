@@ -1,0 +1,30 @@
+[
+ {
+  "split": "held-out recordings (7 of 34)",
+  "train_frames": 2521,
+  "test_frames": 482,
+  "speed_MAE_mps": 1.4,
+  "speed_MAE_baseline": 1.61,
+  "stop_soon_AUC": 0.658,
+  "stop_soon_AUC_baseline": 0.5,
+  "stop_soon_positives_in_test": 31,
+  "turn_balanced_acc": 0.5,
+  "turn_balanced_acc_baseline": 0.333,
+  "slowdown_rate_when_stop_sign_seen": 0.34,
+  "slowdown_rate_otherwise": 0.04
+ },
+ {
+  "split": "held-out area (east of -81.4506)",
+  "train_frames": 2252,
+  "test_frames": 751,
+  "speed_MAE_mps": 1.94,
+  "speed_MAE_baseline": 2.1,
+  "stop_soon_AUC": 0.51,
+  "stop_soon_AUC_baseline": 0.5,
+  "stop_soon_positives_in_test": 82,
+  "turn_balanced_acc": 0.331,
+  "turn_balanced_acc_baseline": 0.333,
+  "slowdown_rate_when_stop_sign_seen": 0.33,
+  "slowdown_rate_otherwise": 0.1
+ }
+]
