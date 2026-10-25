@@ -631,7 +631,7 @@ async function loopCopilot() {
     if (el.dcam?.videoWidth) {
       try {
         if (n++ % 2 === 0) {
-          last = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null, limit: limitNow() });
+          last = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null, limit: limitNow(), speed: S.gpsSpeed ?? 0, hfov: hfov() });
           CP.secs = (performance.now() - t0) / 1000;
         } else {
           const sg = await copilot.signs(el.dcam, hfov());

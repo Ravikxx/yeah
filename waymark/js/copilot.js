@@ -145,34 +145,82 @@ function gray(px, W, H) { // half size, grayscale
   }
   return { g, w, h };
 }
-// best sideways shift (in half-size pixels) of box b from image A to image B
-function shiftOf(A, B, b, maxS) {
+// How box b moved from image A to image B (half-size pixels): sideways shift
+// dx and growth `scale`, found by trying shifts and sizes until the car's patch
+// lines up best.
+function matchBox(A, B, b, maxS, parked = null) {
   const [x0, y0, x1, y1] = [Math.max(0, b[0] >> 1), Math.max(0, b[1] >> 1), Math.min(A.w - 1, b[2] >> 1), Math.min(A.h - 1, b[3] >> 1)];
-  const step = Math.max(1, Math.floor((x1 - x0) * (y1 - y0) / 1500)); // ~1500 sample pixels at most
-  let best = 0, bestErr = Infinity;
-  const sx = x1 - x0 < 40 ? 1 : 2; // finer steps for small (far) cars
-  for (let dx = -maxS; dx <= maxS; dx += sx) for (let dy = -4; dy <= 4; dy += 2) {
-    let err = 0, n = 0;
-    for (let k = 0, y = y0; y < y1; y++) for (let x = x0; x < x1; x++, k++) {
-      if (k % step) continue;
-      const xb = x + dx, yb = y + dy;
+  const pts = [];
+  const step = Math.max(1, Math.floor((x1 - x0) * (y1 - y0) / 1200)); // ~1200 sample pixels at most
+  for (let k = 0, y = y0; y < y1; y++) for (let x = x0; x < x1; x++, k++) if (k % step === 0) pts.push(x, y, A.g[y * A.w + x]);
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const err = (dx, dy, sc) => {
+    let e = 0, n = 0;
+    for (let i = 0; i < pts.length; i += 3) {
+      const xb = Math.round(cx + (pts[i] - cx) * sc + dx), yb = Math.round(cy + (pts[i + 1] - cy) * sc + dy);
       if (xb < 0 || xb >= B.w || yb < 0 || yb >= B.h) continue;
-      err += Math.abs(A.g[y * A.w + x] - B.g[yb * B.w + xb]); n++;
+      e += Math.abs(pts[i + 2] - B.g[yb * B.w + xb]); n++;
     }
-    if (n > 20 && err / n < bestErr) { bestErr = err / n; best = dx; }
+    return n > 20 ? e / n : Infinity;
+  };
+  let best = { dx: 0, dy: 0, scale: 1, e: Infinity };
+  const sx = x1 - x0 < 40 ? 1 : 2; // finer steps for small (far) cars
+  const my = Math.max(4, Math.round((y1 - y0) * 0.15)); // a near car you ride up to also slides down
+  // coarse: shift and size together (a near car can grow ~30% in 0.2 s), then fine around the best
+  for (let sc = 0.85; sc <= 1.4501; sc += 0.05) for (let dx = -maxS; dx <= maxS; dx += sx * 2) for (let dy = -my; dy <= my; dy += 2) {
+    const e = err(dx, dy, sc); if (e < best.e) best = { dx, dy, scale: sc, e };
+  }
+  const c = { ...best };
+  for (let sc = c.scale - 0.04; sc <= c.scale + 0.0401; sc += 0.01) for (let dx = c.dx - 3; dx <= c.dx + 3; dx++) for (let dy = c.dy - 2; dy <= c.dy + 2; dy++) {
+    const e = err(dx, dy, sc); if (e < best.e) best = { dx, dy, scale: sc, e };
+  }
+  // How well "it's parked" fits: where a parked car would be, given your speed (a little slack)
+  if (parked) {
+    best.parkedE = Infinity;
+    for (let sc = parked.scale - 0.03; sc <= parked.scale + 0.0301; sc += 0.01)
+      for (let dx = Math.round(parked.dx) - 2; dx <= Math.round(parked.dx) + 2; dx++) for (let dy = -my; dy <= my; dy++) {
+        const e = err(dx, dy, sc); if (e < best.parkedE) best.parkedE = e;
+      }
   }
   return best;
 }
-function crossingCars(A, B, ds, W, H, secs) {
-  const bg = shiftOf(A, B, [0, Math.round(H * 0.05), W, Math.round(H * 0.2)], 24); // sky line / buildings
+function shiftOf(A, B, b, maxS) { return matchBox(A, B, b, maxS).dx; }
+
+// Every car's own motion, in metres, with yours taken out (egoMps: GPS speed;
+// hfovDeg: the lens). Distance from the car's height (cars are ~1.5 m tall),
+// side position from where it sits in the picture. As you ride, a parked car
+// grows by (your speed / its distance) per second and drifts outward with it;
+// anything beyond that is the car moving. Parked cars never raise an alert.
+const CAR_H = 1.5, LANE = 1.8; // m: car height; half your lane plus a margin
+function carMotion(A, B, ds, W, H, secs, egoMps = 0, hfovDeg = 50) {
+  const bg = shiftOf(A, B, [0, Math.round(H * 0.05), W, Math.round(H * 0.2)], 24); // sky line / buildings: you turning
+  const f = (W / 2) / Math.tan(hfovDeg * Math.PI / 360);
   const out = [];
   for (const d of ds) {
-    if (d.cls !== 'car' || d.score < 0.5) continue;
-    const dx = shiftOf(A, B, d.box, Math.round(A.w * 0.15)) - bg;
-    const v = (dx * 2) / W / secs; // picture widths per second, + = moving right
-    const c = (d.box[0] + d.box[2]) / 2 / W;
-    const towardOrAcross = (c < 0.5 && v > 0) || (c > 0.5 && v < 0) || (c > 0.25 && c < 0.75);
-    if (Math.abs(v) > 0.1 && towardOrAcross && size(d, W, H) > 0.02) out.push({ box: d.box, v, size: size(d, W, H) });
+    if (d.cls !== 'car' || d.score < 0.6) continue;
+    const hPx = d.box[3] - d.box[1];
+    if (hPx < 12) continue; // too far to judge
+    const dist = Math.max(3, f * CAR_H / hPx);
+    const offPx = (d.box[0] + d.box[2]) / 2 - W / 2;
+    // where it would be if parked: grows by dist / (dist - your travel), drifts outward with that, plus your turning
+    const pScale = dist / Math.max(1, dist - egoMps * secs);
+    const m = matchBox(A, B, d.box, Math.round(A.w * 0.15), { scale: pScale, dx: bg + (offPx * (pScale - 1)) / 2 });
+    const side = offPx * dist / f; // m, + = to your right
+    // sideways: measured slide minus your turning and minus a parked car's outward drift
+    const vPx = (m.dx - bg) * 2 / secs - offPx * egoMps / dist;
+    const vSide = vPx * dist / f; // m/s, + = moving right
+    // toward you: growth rate x distance = closing speed; a parked car closes at your speed
+    const closing = hPx >= 40 ? (m.scale - 1) / secs * dist : null; // m/s (growth is only measurable for nearer cars)
+    const own = closing == null ? null : closing - egoMps; // the car's own speed toward you
+    // Parked unless the parked prediction clearly doesn't fit (its error well above the best match's)
+    const fitsParked = m.parkedE <= m.e * 1.15 + 2;
+    const noise = 1.5 * 2 / secs * dist / f; // m/s from a 1.5 px matching error
+    const moving = !fitsParked && (Math.abs(vSide) > 1.5 + noise || (own != null && Math.abs(own) > Math.max(3, 0.6 * egoMps)));
+    const inLane = Math.abs(side) < LANE;
+    const intoLane = !inLane && Math.sign(vSide) === -Math.sign(side) && Math.abs(vSide) > 1.5 && (Math.abs(side) - LANE) / Math.abs(vSide) < 3;
+    out.push({ box: d.box, dist, side, vSide, closing, moving, fitsParked,
+      crossing: moving && dist < 40 && Math.abs(vSide) > 1.5 && (inLane || intoLane),
+      closingIn: moving && inLane && closing != null && closing > 1 && dist / closing < 4 });
   }
   return out;
 }
@@ -281,7 +329,7 @@ export async function look(video, state) {
   const B = gray(grab(video).px, W, H), gap = (performance.now() - tA) / 1000;
   const emb = await embed(video, W, H); // one model at a time: single-threaded WebAssembly can't run two at once
   const ds = await detect(img);
-  const crossing = crossingCars(A, B, ds, W, H, gap);
+  const cars = carMotion(A, B, ds, W, H, gap, state.speed ?? 0, state.hfov ?? 50);
   const df = detFeats(ds, W, H);
   const lk = state.look ?? null;
   S.hist = S.hist.filter((h) => t - h.t <= 10); S.hist.unshift({ t, look: lk, df });
@@ -299,6 +347,7 @@ export async function look(video, state) {
   if (nv[6] < 30 && (nv[1] || nv[2])) p.turn = nv[1] ? [0.75, 0.25, 0] : [0, 0.25, 0.75];
   return { ...p, dets: ds, W, H,
     seen: { stop: df[0] >= 0.5 || recent.length > 0, red: df[2] >= 0.5 && df[4] > df[5] && df[4] > 0.01, green: df[2] >= 0.5 && df[5] > df[4] && df[5] > 0.01,
-      carAhead: df[7] > 0.12, carCrossing: mo[1] > 0.08 || crossing.length > 0, carClosing: mo[0] > 0.015 }, crossing };
+      // only moving cars (0.2 s check, your own motion taken out); parked cars never count
+      carAhead: df[7] > 0.12, carCrossing: cars.some((c) => c.crossing), carClosing: cars.some((c) => c.closingIn) }, cars };
 }
-export const _test = { gray, shiftOf, crossingCars, detect: (img) => detect(img) };
+export const _test = { gray, matchBox, carMotion, detect: (img) => detect(img) };
