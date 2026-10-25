@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610252120';
-import * as queue from './queue.js?v=202610252120';
-import * as coverage from './coverage.js?v=202610252120';
-import { findView } from './street.js?v=202610252120';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610252120';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610252120';
-import { coverageLines } from './street.js?v=202610252120';
-import { planTrip } from './directions.js?v=202610252120';
-import * as copilot from './copilot.js?v=202610252120';
-import { searchPlaces } from './api.js?v=202610252120';
-import { snapToTrack } from './geo.js?v=202610252120';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610252120';
+import { pickMime } from './record.js?v=202610252203';
+import * as queue from './queue.js?v=202610252203';
+import * as coverage from './coverage.js?v=202610252203';
+import { findView } from './street.js?v=202610252203';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610252203';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610252203';
+import { coverageLines } from './street.js?v=202610252203';
+import { planTrip } from './directions.js?v=202610252203';
+import * as copilot from './copilot.js?v=202610252203';
+import { searchPlaces } from './api.js?v=202610252203';
+import { snapToTrack } from './geo.js?v=202610252203';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610252203';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -625,29 +625,41 @@ function hfov() {
 
 // Alternates: a full look (the model) and a zoomed look for signs far ahead.
 async function loopCopilot() {
-  let n = 0, last = null;
+  // Cars are tracked several times a second (cheap); the detector finds new cars about once a
+  // second; the full model look and the zoomed sign look take turns every couple of seconds.
+  const T = copilot.makeTracker();
+  let last = null, lastDet = 0, lastFull = -1e9, lastZoom = -1e9;
+  const feed = (r, now) => { T.addDetections(r.dets, r.frame.g, r.frame.W, r.frame.H, now / 1000); track(r.frame, now); };
+  const track = (fr, now) => {
+    const cars = T.update(fr.g, now / 1000, S.gpsSpeed ?? 0, hfov(), fr.W, fr.H);
+    CP.crossingAt = cars.some((c) => c.crossing) ? now : CP.crossingAt;
+    CP.closingAt = cars.some((c) => c.closingIn) ? now : CP.closingAt;
+  };
   while (CP.on) {
-    const t0 = performance.now();
+    const t0 = performance.now(); let op = 'track';
     if (el.dcam?.videoWidth) {
       try {
-        if (n++ % 2 === 0) {
-          last = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null, limit: limitNow(), speed: S.gpsSpeed ?? 0, hfov: hfov() });
-          CP.secs = (performance.now() - t0) / 1000;
-        } else {
-          const sg = await copilot.signs(el.dcam, hfov());
-          // a stop sign counts once two zoomed looks in a row (within 2.5 s) see it with confidence;
+        if (t0 - lastFull > 2000) { op = 'look';
+          last = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null, limit: limitNow() });
+          CP.secs = (performance.now() - t0) / 1000; lastFull = lastDet = performance.now(); feed(last, lastFull);
+        } else if (t0 - lastZoom > 2000) { op = 'signs';
+          const sg = await copilot.signs(el.dcam, hfov()); lastZoom = performance.now();
+          // a stop sign counts once two zoomed looks in a row (within 3 s) see it with confidence;
           // one-off hits (red lights of cars, other red signs) are ignored
-          const now = performance.now();
           if (sg.stop && sg.stop.score >= 0.6) {
-            if (CP.cand && now - CP.cand.at < 2500) CP.sign = { dist: sg.stop.dist, odo: S.odo || 0, at: now };
-            CP.cand = { at: now };
+            if (CP.cand && lastZoom - CP.cand.at < 3000) CP.sign = { dist: sg.stop.dist, odo: S.odo || 0, at: lastZoom };
+            CP.cand = { at: lastZoom };
           }
-          if (sg.light) CP.light = { ...sg.light, at: performance.now() };
+          if (sg.light) CP.light = { ...sg.light, at: lastZoom };
+        } else if (t0 - lastDet > 1000) { op = 'detect';
+          const r = await copilot.detectFrame(el.dcam); lastDet = performance.now(); feed(r, lastDet);
+        } else {
+          track(copilot.frameGray(el.dcam), t0);
         }
         if (CP.on && last) showCopilot(last, CP.secs || 1);
-      } catch (err) { setCopilot({ alert: 'Co-pilot hit a problem', detail: err.message || String(err) }); }
+      } catch (err) { console.error('copilot', op, err, err?.stack); setCopilot({ alert: 'Co-pilot hit a problem', detail: err.message || String(err) }); }
     }
-    await new Promise((r) => setTimeout(r, Math.max(100, 500 - (performance.now() - t0))));
+    await new Promise((r) => setTimeout(r, Math.max(30, 120 - (performance.now() - t0))));
   }
 }
 
@@ -667,6 +679,9 @@ function showCopilot(r, secs) {
   const turn = !S.navNow ? null : r.turn[0] > 0.5 ? 'left' : r.turn[2] > 0.5 ? 'right' : null;
   const stopIn = stopAhead();
   const redFar = CP.light && performance.now() - CP.light.at < 4000 && CP.light.red;
+  const now = performance.now();
+  r.seen.carCrossing = now - (CP.crossingAt || -1e9) < 1500; // from the tracker; hold the alert 1.5 s
+  r.seen.carClosing = now - (CP.closingAt || -1e9) < 1500;
   const [alert, level] = r.seen.red || redFar ? ['Red light: stop', 'stop']
     : stopIn != null && stopIn < 10 ? ['Stop sign: stop', 'stop']
     : stopIn != null ? [`Stop sign in ${Math.round(stopIn * 3.281 / 5) * 5} ft`, 'slow']
@@ -680,7 +695,7 @@ function showCopilot(r, secs) {
   const lim = limitNow(), aim = Math.min(lim, BIKE_MAX_MPH);
   const ai = Math.min(r.speed * MPH, aim);
   setCopilot({ alert, level, ai: `${Math.round(ai)} mph`, you, odds: `Limit ${lim}${CP.limit ? '' : '?'} · aim ${aim} · ${Math.round(r.slow * 100)}% slow-down`,
-    detail: `Full look every ${(secs * 2).toFixed(1)} s${r.seen.carAhead ? ' · car ahead' : ''}${r.seen.green ? ' · green light' : ''}` });
+    detail: `Model look takes ${secs.toFixed(1)} s${r.seen.carAhead ? ' · car ahead' : ''}${r.seen.green ? ' · green light' : ''}` });
   if (level !== 'ok' && level !== 'info') say(alert.startsWith('Stop sign in') ? 'Stop sign ahead' : alert.split(':')[0]);
   else if (turn) say(`Turn ${turn}`);
 }

@@ -52,6 +52,12 @@ export async function load(onProgress = () => {}) {
 }
 
 // ---------- seeing ----------
+// The converted detector crashes (instead of returning an empty list) when a picture has
+// nothing in it at all, e.g. a patch of sky. Treat that as "nothing found".
+async function runDetector(x, shape) {
+  try { return await D.run({ image: new ort.Tensor('float32', x, shape) }); }
+  catch { return { boxes: { data: [] }, labels: { data: [] }, scores: { data: [] } }; }
+}
 const cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
 
 function grab(video) {
@@ -92,7 +98,7 @@ function lightColor(px, W, box) {
 async function detect(img) {
   const { W, H, px } = img, n = W * H, x = new Float32Array(3 * n);
   for (let i = 0; i < n; i++) { x[i] = px[i * 4] / 255; x[n + i] = px[i * 4 + 1] / 255; x[2 * n + i] = px[i * 4 + 2] / 255; }
-  const o = await D.run({ image: new ort.Tensor('float32', x, [3, H, W]) });
+  const o = await runDetector(x, [3, H, W]);
   const line = H * (H > W ? 0.62 : 0.75), out = [];
   for (let i = 0; i < o.scores.data.length; i++) {
     const cls = COCO[Number(o.labels.data[i])], b = Array.from(o.boxes.data.slice(i * 4, i * 4 + 4));
@@ -113,12 +119,14 @@ const SIGN_M = 0.76; // a stop sign is 30 in across
 
 export async function signs(video, hfovDeg = 90) {
   const W = video.videoWidth, H = video.videoHeight;
-  const [x0, y0, x1, y1] = [ZOOM[0] * W, ZOOM[1] * H, ZOOM[2] * W, ZOOM[3] * H].map(Math.round);
+  let [x0, y0, x1, y1] = [ZOOM[0] * W, ZOOM[1] * H, ZOOM[2] * W, ZOOM[3] * H].map(Math.round);
+  // the converted detector only handles pictures up to ~1.7x wider than tall (phone held sideways)
+  if ((x1 - x0) / (y1 - y0) > 1.6) { const need = Math.round((x1 - x0) / 1.6); y0 = Math.max(0, y0 - Math.round((need - (y1 - y0)) / 2)); y1 = Math.min(H, y0 + need); }
   const w = x1 - x0, h = y1 - y0;
   cv.width = w; cv.height = h; cx.drawImage(video, x0, y0, w, h, 0, 0, w, h);
   const px = cx.getImageData(0, 0, w, h).data, n = w * h, x = new Float32Array(3 * n);
   for (let i = 0; i < n; i++) { x[i] = px[i * 4] / 255; x[n + i] = px[i * 4 + 1] / 255; x[2 * n + i] = px[i * 4 + 2] / 255; }
-  const o = await D.run({ image: new ort.Tensor('float32', x, [3, h, w]) });
+  const o = await runDetector(x, [3, h, w]);
   const f = (W / 2) / Math.tan(hfovDeg * Math.PI / 360); // focal length in pixels
   let stop = null, light = null, red = 0, green = 0;
   for (let i = 0; i < o.scores.data.length; i++) {
@@ -230,6 +238,13 @@ function carMotion(A, B, ds, W, H, secs, egoMps = 0, hfovDeg = 50) {
   }
   return out;
 }
+// For the tracker: the current frame (half-size grayscale), and a detector-only pass.
+export function frameGray(video) { const im = grab(video); return { g: gray(im.px, im.W, im.H), W: im.W, H: im.H }; }
+export async function detectFrame(video) {
+  const im = grab(video); const ds = await detect(im);
+  return { dets: ds, frame: { g: gray(im.px, im.W, im.H), W: im.W, H: im.H } };
+}
+
 // ---------- car tracker ----------
 // Cars found by the detector (about once a second) are followed frame to frame
 // (several times a second) by matching their patch. For every step, the part of
@@ -264,6 +279,11 @@ export function makeTracker() {
       const dt = Math.max(0.05, t - prevT);
       const f = (W / 2) / Math.tan(hfovDeg * Math.PI / 360);
       const bg = sceneShift(prev, g, W, H);
+      // camera turning (handlebar scan, steering, a bump): near and far things shift by different
+      // amounts, so car motion can't be judged; start counting again once the view settles
+      const turning = Math.abs(bg.dx * 2) / dt > W * 0.25 || Math.abs(bg.dy * 2) / dt > H * 0.15;
+      if (turning) for (const tr of tracks) tr.hist = [];
+      const stopped = egoMps < 1.2;
       const out = [];
       for (const tr of tracks) {
         const b = tr.box, hPx = b[3] - b[1];
@@ -275,7 +295,9 @@ export function makeTracker() {
         if (!(m.e < 40)) { tr.lost = true; continue; }
         const ownPx = (m.dx - parkedDx) * 2; // full-size px of sideways movement a parked car wouldn't make
         const ownM = ownPx * dist / f;
-        tr.hist.push({ t, ownM, dist });
+        const side0 = offPx * dist / f; // m to your right, from this step's box
+        if (!turning) tr.hist.push({ t, ownM, dist, side: side0, h: hPx });
+        if (!tr.hist.length) { tr.v = ownPx / dt; continue; }
         tr.hist = tr.hist.filter((h) => t - h.t <= 1.2);
         tr.v = ownPx / dt; // px/s, for predicting the next step
         // move the box with the car
@@ -285,18 +307,23 @@ export function makeTracker() {
         // moving: 1.5+ m on its own within ~1 s, mostly in one direction
         const H_ = tr.hist, span = H_.length > 1 ? H_[H_.length - 1].t - H_[0].t + dt : dt;
         const sum = H_.reduce((a, h) => a + h.ownM, 0), sameWay = H_.filter((h) => Math.sign(h.ownM) === Math.sign(sum)).length / H_.length;
-        const moving = H_.length >= 4 && Math.abs(sum) > 1.5 && sameWay >= 0.75;
         const vSide = sum / span; // m/s, + = moving right
+        // stopped: nothing should move but moving cars, so be sensitive; riding: need much clearer evidence
+        // riding: the car's sideways position in metres must really change too (an oncoming car
+        // in its own lane, or a parked one, stays the same distance to the side)
+        const dSide = H_[H_.length - 1].side - H_[0].side;
+        const moving = H_.length >= 4 && sameWay >= 0.75 && (stopped ? Math.abs(sum) > 1.5
+          : Math.abs(sum) > 3 && Math.abs(vSide) > 3 && Math.sign(dSide) === Math.sign(sum) && Math.abs(dSide) > 2);
         const side = offPx * dist / f;
         const inLane = Math.abs(side) < LANE;
-        const intoLane = !inLane && Math.sign(vSide) === -Math.sign(side) && (Math.abs(side) - LANE) / Math.max(0.1, Math.abs(vSide)) < 3;
+        const intoLane = !inLane && Math.sign(vSide) === -Math.sign(side) && (Math.abs(side) - LANE) / Math.max(0.1, Math.abs(vSide)) < (stopped ? 3 : 2);
         // getting closer in your lane: distance falling faster than it would for a parked car
         const d0 = H_[0].dist, closing = H_.length >= 4 ? (d0 - dist) / span : 0; // m/s
         const ownAlong = closing - egoMps; // + = coming toward you, - = going away
-        const movingAlong = H_.length >= 4 && Math.abs(ownAlong) > Math.max(3, 0.5 * egoMps);
+        const movingAlong = H_.length >= 4 && hPx >= 40 && H_[0].h >= 40 && Math.abs(ownAlong) > Math.max(3, 0.5 * egoMps); // growth only measurable on nearer cars
         out.push({ id: tr.id, box: tr.box, dist, side, vSide, moving: moving || movingAlong,
-          crossing: moving && dist < 40 && (inLane || intoLane),
-          closingIn: movingAlong && inLane && closing > 1 && dist / closing < 4 });
+          crossing: moving && dist < (stopped ? 40 : 30) && (inLane || intoLane),
+          closingIn: movingAlong && inLane && closing > 1 && dist / closing < (stopped ? 4 : 3) });
       }
       tracks = tracks.filter((q) => !q.lost);
       prev = g; prevT = t;
@@ -405,12 +432,8 @@ function zoomFeats(t) {
 export async function look(video, state) {
   const t = performance.now() / 1000;
   const img = grab(video), { W, H } = img;
-  const A = gray(img.px, W, H), tA = performance.now();
-  await sleep(GAP_MS);
-  const B = gray(grab(video).px, W, H), gap = (performance.now() - tA) / 1000;
   const emb = await embed(video, W, H); // one model at a time: single-threaded WebAssembly can't run two at once
   const ds = await detect(img);
-  const cars = carMotion(A, B, ds, W, H, gap, state.speed ?? 0, state.hfov ?? 50);
   const df = detFeats(ds, W, H);
   const lk = state.look ?? null;
   S.hist = S.hist.filter((h) => t - h.t <= 10); S.hist.unshift({ t, look: lk, df });
@@ -426,9 +449,9 @@ export async function look(video, state) {
   // follow the directions when a turn is under 30 m away (as in training)
   const nv = x.slice(-10);
   if (nv[6] < 30 && (nv[1] || nv[2])) p.turn = nv[1] ? [0.75, 0.25, 0] : [0, 0.25, 0.75];
-  return { ...p, dets: ds, W, H,
+  return { ...p, W, H,
     seen: { stop: df[0] >= 0.5 || recent.length > 0, red: df[2] >= 0.5 && df[4] > df[5] && df[4] > 0.01, green: df[2] >= 0.5 && df[5] > df[4] && df[5] > 0.01,
-      // only moving cars (0.2 s check, your own motion taken out); parked cars never count
-      carAhead: df[7] > 0.12, carCrossing: cars.some((c) => c.crossing), carClosing: cars.some((c) => c.closingIn) }, cars };
+      carAhead: df[7] > 0.12 }, // moving-car alerts come from the tracker (makeTracker)
+    dets: ds, frame: { g: gray(img.px, W, H), W, H } };
 }
 export const _test = { gray, matchBox, carMotion, makeTracker, detect: (img) => detect(img) };
