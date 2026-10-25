@@ -131,6 +131,53 @@ export async function signs(video, hfovDeg = 90) {
   return { stop, light };
 }
 
+// ---------- quick motion: which cars are crossing ----------
+// Looks a second apart are too far apart for a car crossing a busy road (it's
+// gone by the next look). So each full look also grabs a second frame 0.2 s
+// later and measures how far each car slid sideways between the two, by
+// sliding the car's patch around until it lines up. The background's shift
+// (handlebars turning) is measured the same way and taken out.
+const GAP_MS = 200;
+function gray(px, W, H) { // half size, grayscale
+  const w = W >> 1, h = H >> 1, g = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = ((y * 2) * W + x * 2) * 4; g[y * w + x] = 0.3 * px[i] + 0.59 * px[i + 1] + 0.11 * px[i + 2];
+  }
+  return { g, w, h };
+}
+// best sideways shift (in half-size pixels) of box b from image A to image B
+function shiftOf(A, B, b, maxS) {
+  const [x0, y0, x1, y1] = [Math.max(0, b[0] >> 1), Math.max(0, b[1] >> 1), Math.min(A.w - 1, b[2] >> 1), Math.min(A.h - 1, b[3] >> 1)];
+  const step = Math.max(1, Math.floor((x1 - x0) * (y1 - y0) / 1500)); // ~1500 sample pixels at most
+  let best = 0, bestErr = Infinity;
+  const sx = x1 - x0 < 40 ? 1 : 2; // finer steps for small (far) cars
+  for (let dx = -maxS; dx <= maxS; dx += sx) for (let dy = -4; dy <= 4; dy += 2) {
+    let err = 0, n = 0;
+    for (let k = 0, y = y0; y < y1; y++) for (let x = x0; x < x1; x++, k++) {
+      if (k % step) continue;
+      const xb = x + dx, yb = y + dy;
+      if (xb < 0 || xb >= B.w || yb < 0 || yb >= B.h) continue;
+      err += Math.abs(A.g[y * A.w + x] - B.g[yb * B.w + xb]); n++;
+    }
+    if (n > 20 && err / n < bestErr) { bestErr = err / n; best = dx; }
+  }
+  return best;
+}
+function crossingCars(A, B, ds, W, H, secs) {
+  const bg = shiftOf(A, B, [0, Math.round(H * 0.05), W, Math.round(H * 0.2)], 24); // sky line / buildings
+  const out = [];
+  for (const d of ds) {
+    if (d.cls !== 'car' || d.score < 0.5) continue;
+    const dx = shiftOf(A, B, d.box, Math.round(A.w * 0.15)) - bg;
+    const v = (dx * 2) / W / secs; // picture widths per second, + = moving right
+    const c = (d.box[0] + d.box[2]) / 2 / W;
+    const towardOrAcross = (c < 0.5 && v > 0) || (c > 0.5 && v < 0) || (c > 0.25 && c < 0.75);
+    if (Math.abs(v) > 0.1 && towardOrAcross && size(d, W, H) > 0.02) out.push({ box: d.box, v, size: size(d, W, H) });
+  }
+  return out;
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 // ---------- features (mirror see.py) ----------
 const size = (x, W, H) => (x ? Math.sqrt(Math.max(0, (x.box[2] - x.box[0]) * (x.box[3] - x.box[1])) / (W * H)) : 0);
 const best = (xs, key) => xs.reduce((a, x) => (a == null || key(x) > key(a) ? x : a), null);
@@ -229,8 +276,12 @@ function zoomFeats(t) {
 export async function look(video, state) {
   const t = performance.now() / 1000;
   const img = grab(video), { W, H } = img;
+  const A = gray(img.px, W, H), tA = performance.now();
+  await sleep(GAP_MS);
+  const B = gray(grab(video).px, W, H), gap = (performance.now() - tA) / 1000;
   const emb = await embed(video, W, H); // one model at a time: single-threaded WebAssembly can't run two at once
   const ds = await detect(img);
+  const crossing = crossingCars(A, B, ds, W, H, gap);
   const df = detFeats(ds, W, H);
   const lk = state.look ?? null;
   S.hist = S.hist.filter((h) => t - h.t <= 10); S.hist.unshift({ t, look: lk, df });
@@ -248,5 +299,6 @@ export async function look(video, state) {
   if (nv[6] < 30 && (nv[1] || nv[2])) p.turn = nv[1] ? [0.75, 0.25, 0] : [0, 0.25, 0.75];
   return { ...p, dets: ds, W, H,
     seen: { stop: df[0] >= 0.5 || recent.length > 0, red: df[2] >= 0.5 && df[4] > df[5] && df[4] > 0.01, green: df[2] >= 0.5 && df[5] > df[4] && df[5] > 0.01,
-      carAhead: df[7] > 0.12, carCrossing: mo[1] > 0.08, carClosing: mo[0] > 0.015 } };
+      carAhead: df[7] > 0.12, carCrossing: mo[1] > 0.08 || crossing.length > 0, carClosing: mo[0] > 0.015 }, crossing };
 }
+export const _test = { gray, shiftOf, crossingCars, detect: (img) => detect(img) };
