@@ -7,11 +7,12 @@
 //   stop sign in the last 3 looks                                                      2
 //   what the last left/right scan showed (10 s) and the camera angle now               7
 //   how cars moved since the last look                                                 4
+//   zoomed look at the sign area (stop sign, light colour); speed limit, bike target   5+2
 //   directions: next turn, metres to it, metres to destination                        10
 // then scaler + PCA on the picture part, and gradient-boosted trees.
 
 const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/';
-const FILES = { resnet: 'ai/model/resnet18.onnx', detector: 'ai/model/detector.onnx', trees: 'ai/model/model.json?v=3' }; // bump ?v= when retrained
+const FILES = { resnet: 'ai/model/resnet18.onnx', detector: 'ai/model/detector.onnx', trees: 'ai/model/model.json?v=4' }; // bump ?v= when retrained
 const CACHE = 'waymark-copilot-v2';
 const COCO = { 13: 'stop', 10: 'light', 3: 'car', 8: 'car', 6: 'car', 4: 'car' };
 const CROP = 0.72, MEAN = [0.485, 0.456, 0.406], STD = [0.229, 0.224, 0.225];
@@ -115,14 +116,18 @@ export async function signs(video, hfovDeg = 90) {
   for (let i = 0; i < n; i++) { x[i] = px[i * 4] / 255; x[n + i] = px[i * 4 + 1] / 255; x[2 * n + i] = px[i * 4 + 2] / 255; }
   const o = await D.run({ image: new ort.Tensor('float32', x, [3, h, w]) });
   const f = (W / 2) / Math.tan(hfovDeg * Math.PI / 360); // focal length in pixels
-  let stop = null, light = null;
+  let stop = null, light = null, red = 0, green = 0;
   for (let i = 0; i < o.scores.data.length; i++) {
     const cls = COCO[Number(o.labels.data[i])], sc = o.scores.data[i], b = Array.from(o.boxes.data.slice(i * 4, i * 4 + 4));
-    if (cls === 'stop' && sc >= 0.35 && (!stop || sc > stop.score)) stop = { score: sc, dist: f * SIGN_M / Math.max(1, b[2] - b[0]) };
-    if (cls === 'light' && sc >= 0.5 && (!light || sc > light.score)) {
-      const [r, g] = lightColor(px, w, b); light = { score: sc, red: r > g && r > 0.01, green: g > r && g > 0.01 };
+    if (cls === 'stop' && sc >= 0.35 && (!stop || sc > stop.score)) stop = { score: sc, dist: f * SIGN_M / Math.max(1, b[2] - b[0]), width: (b[2] - b[0]) / W };
+    if (cls === 'light' && sc >= 0.5) {
+      const [r, g] = lightColor(px, w, b); red = Math.max(red, r); green = Math.max(green, g);
+      if (!light || sc > light.score) light = { score: sc, red: r > g && r > 0.01, green: g > r && g > 0.01 };
     }
   }
+  const t = performance.now() / 1000;
+  S.zoom = { t, stop: stop ? stop.score : 0, width: stop ? stop.width : 0, red, green };
+  S.zoomHist = [...(S.zoomHist || []).filter((z) => t - z.t <= 3), { t, stop: S.zoom.stop }];
   return { stop, light };
 }
 
@@ -211,9 +216,16 @@ export function predictRow(x) { // x: the 1056 inputs; exported for the self-tes
 
 // ---------- one look ----------
 const S = { hist: [], prevEmb: null, prevDets: null, prevLook: null, stops: [] };
-export function reset() { S.hist = []; S.prevEmb = null; S.prevDets = null; S.prevLook = null; S.stops = []; }
+export function reset() { S.hist = []; S.prevEmb = null; S.prevDets = null; S.prevLook = null; S.stops = []; S.zoom = null; S.zoomHist = []; }
 
-// video: the camera <video>; state: { look (deg or null), nav: {instruction, inM, leftM} or null }
+// zoomed look (from signs(), within the last 1.5 s): stop score + width now, best stop in 3 s, red, green
+function zoomFeats(t) {
+  const z = S.zoom && t - S.zoom.t <= 1.5 ? S.zoom : null;
+  const recent = Math.max(0, ...(S.zoomHist || []).filter((q) => t - q.t <= 3).map((q) => q.stop));
+  return [z ? z.stop : 0, z ? z.width : 0, recent, z ? z.red : 0, z ? z.green : 0];
+}
+
+// video: the camera <video>; state: { look (deg or null), nav: {instruction, inM, leftM} or null, limit (mph) }
 export async function look(video, state) {
   const t = performance.now() / 1000;
   const img = grab(video), { W, H } = img;
@@ -228,7 +240,7 @@ export async function look(video, state) {
   const mo = sameView ? motionFeats(ds, S.prevDets, W, H) : [0, 0, 0, 0];
   const prev = S.prevEmb || emb;
   const x = [...emb, ...emb.map((v, i) => v - prev[i]), ...df, Math.max(0, ...recent.map((d) => d.score)), recent.length,
-    ...scanFeats(S.hist, t), ...mo, ...navFeats(state.nav)];
+    ...scanFeats(S.hist, t), ...mo, ...zoomFeats(t), state.limit ?? 25, Math.min(state.limit ?? 25, 20), ...navFeats(state.nav)];
   S.prevEmb = emb; S.prevDets = ds; S.prevLook = lk;
   const p = predictRow(x);
   // follow the directions when a turn is under 30 m away (as in training)
