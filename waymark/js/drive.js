@@ -64,6 +64,16 @@ function wire() {
   el.driveStart.addEventListener('click', start);
   el.driveBtn.addEventListener('click', () => (S.capturing ? stopCapture() : startCapture()));
   el.driveClose.addEventListener('click', () => { location.hash = '#/'; });
+  document.getElementById('lensPills').addEventListener('click', (e) => {
+    const b = e.target.closest('.lens-pill');
+    if (b && b.getAttribute('aria-pressed') !== 'true') switchCamera({ facing: 'environment', name: b.dataset.name });
+  });
+  document.getElementById('driveFlip').addEventListener('click', () => {
+    const cur = currentCam();
+    const front = cur ? lenses.front.includes(cur) : savedCam().facing === 'user';
+    const last = savedCam().name || '0.5×'; // the back lens you had before flipping
+    switchCamera(front ? { facing: 'environment', name: last } : { facing: 'user', name: last });
+  });
   document.getElementById('missionBtn').addEventListener('click', newMission);
   for (const r of document.querySelectorAll('input[name="ridemode"]')) {
     r.addEventListener('change', () => {
@@ -94,8 +104,7 @@ async function start() {
   startGps(); // ask for location right away, while the tap still counts (iPhone only prompts then)
   startCompass(); // same for motion & orientation
   try {
-    S.stream = await navigator.mediaDevices.getUserMedia({ video: CAMERA, audio: false });
-    S.stream = await ultraWide(S.stream);
+    S.stream = await openCamera(savedCam());
   } catch (err) {
     el.driveStart.disabled = false;
     return showError(err?.name === 'NotAllowedError'
@@ -105,6 +114,7 @@ async function start() {
   el.driveStart.disabled = false;
   el.dcam.srcObject = S.stream;
   el.dcam.play().catch(() => {});
+  renderCamControls();
   el.intro.hidden = true;
   el.hud.hidden = false;
   setupMap();
@@ -113,26 +123,88 @@ async function start() {
 // 640x480 at 15 fps (never over 24): far less battery than 720p30, still enough for street view and training.
 const CAMERA = { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15, max: 24 } };
 
-// Switch to the 0.5x ultra-wide lens when the phone has one ("Back Ultra Wide
-// Camera" on iPhone): about 106° across held sideways instead of about 65°, so
-// cars coming from the side are in the picture. Camera names are only readable
-// once access is granted, so this runs after the first getUserMedia.
-async function ultraWide(stream) {
-  try {
-    const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
-    // Back cameras only: the iPhone 17 selfie camera is an ultra-wide too ("Front Ultra Wide Camera").
-    const uw = cams.find((d) => /ultra ?wide/i.test(d.label) && /back|rear/i.test(d.label) && !/front/i.test(d.label));
-    const now = stream.getVideoTracks()[0]?.getSettings().deviceId;
-    if (!uw || uw.deviceId === now) return stream;
+// ---------- camera: lens picker + front/back flip ----------
+// Lenses are separate cameras to the browser ("Back Ultra Wide Camera",
+// "Back Camera", "Back Telephoto Camera" on iPhone). Names are only readable
+// once camera access is granted. The choice is remembered on this phone.
+
+const CAM_KEY = 'waymark.camera';
+let lenses = { back: [], front: [] };
+
+function savedCam() {
+  try { return JSON.parse(localStorage.getItem(CAM_KEY)) || { facing: 'environment', name: '0.5×' }; } catch { return { facing: 'environment', name: '0.5×' }; }
+}
+function saveCam(c) { try { localStorage.setItem(CAM_KEY, JSON.stringify(c)); } catch { /* private mode */ } }
+
+const gum = (video) => navigator.mediaDevices.getUserMedia({ video, audio: false });
+
+async function listCams() {
+  const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput' && d.deviceId);
+  const isFront = (d) => /front|user|face/i.test(d.label);
+  const back = cams.filter((d) => !isFront(d) && !/dual|triple/i.test(d.label)); // skip iPhone's combined virtual cameras
+  const name = (d, i) => /ultra ?wide/i.test(d.label) ? '0.5×' : /tele/i.test(d.label) ? 'Tele' : i === 0 ? '1×' : `Lens ${i + 1}`;
+  const plain = back.filter((d) => !/ultra ?wide|tele/i.test(d.label));
+  const order = { '0.5×': 0, '1×': 1, Tele: 2 };
+  lenses = {
+    back: back.map((d) => ({ deviceId: d.deviceId, label: d.label, name: name(d, plain.indexOf(d) < 0 ? 0 : plain.indexOf(d)) }))
+      .sort((x, y) => (order[x.name] ?? 9) - (order[y.name] ?? 9)),
+    front: cams.filter(isFront).map((d) => ({ deviceId: d.deviceId, label: d.label, name: 'Front' })),
+  };
+}
+
+// Opens the camera you asked for: front or back, and which back lens.
+async function openCamera(want) {
+  const facing = want.facing === 'user' ? 'user' : 'environment';
+  let stream = await gum({ ...CAMERA, facingMode: { ideal: facing } });
+  await listCams().catch(() => {});
+  const pick = facing === 'user' ? lenses.front[0] : lenses.back.find((l) => l.name === want.name) || lenses.back.find((l) => l.name === '1×');
+  const cur = stream.getVideoTracks()[0]?.getSettings().deviceId;
+  if (pick && pick.deviceId !== cur) {
     stream.getTracks().forEach((t) => t.stop());
-    const wide = await navigator.mediaDevices.getUserMedia({ video: { ...CAMERA, facingMode: undefined, deviceId: { exact: uw.deviceId } }, audio: false });
-    if (wide.getVideoTracks()[0]?.getSettings().facingMode === 'user') { // still the selfie side: go back to the normal back camera
-      wide.getTracks().forEach((t) => t.stop());
-      return navigator.mediaDevices.getUserMedia({ video: { ...CAMERA, facingMode: { exact: 'environment' } }, audio: false });
+    try { stream = await gum({ ...CAMERA, facingMode: undefined, deviceId: { exact: pick.deviceId } }); }
+    catch { stream = await gum({ ...CAMERA, facingMode: { ideal: facing } }); }
+  }
+  return stream;
+}
+
+function currentCam() {
+  const id = S.stream?.getVideoTracks()[0]?.getSettings().deviceId;
+  return [...lenses.back, ...lenses.front].find((l) => l.deviceId === id) || null;
+}
+
+function renderCamControls() {
+  const box = document.getElementById('lensPills');
+  const cur = currentCam();
+  const front = cur ? lenses.front.includes(cur) : savedCam().facing === 'user';
+  box.innerHTML = front ? '' : lenses.back.map((l) =>
+    `<button type="button" class="lens-pill" aria-pressed="${l === cur}" data-name="${l.name}" title="${l.label.replace(/"/g, '')}">${l.name}</button>`).join('');
+  box.hidden = front || lenses.back.length < 2;
+  document.getElementById('driveFlip').hidden = false; // falls back to front/back by facing if lenses have no names
+}
+
+async function switchCamera(want) {
+  if (S.switching) return;
+  S.switching = true;
+  saveCam(want);
+  try {
+    // While capturing, close the current piece and start a new one on the new camera.
+    const old = S.capturing ? S.chunk : null;
+    if (old) {
+      S.chunk = null;
+      await new Promise((r) => { old.rec.addEventListener('stop', r, { once: true }); old.rec.stop(); setTimeout(r, 2000); });
     }
-    return wide;
-  } catch {
-    return stream.active ? stream : navigator.mediaDevices.getUserMedia({ video: CAMERA, audio: false });
+    S.stream?.getTracks().forEach((t) => t.stop());
+    S.stream = await openCamera(want);
+    el.dcam.srcObject = S.stream;
+    el.dcam.play().catch(() => {});
+    if (S.capturing) newChunk();
+    const cur = currentCam();
+    toast(want.facing === 'user' ? 'Front camera. This films you, not the street.' : `${cur?.name || 'Back'} camera${cur?.label ? ` (${cur.label})` : ''}`);
+  } catch (err) {
+    showError(`That camera didn’t start (${err?.message || err}).`);
+  } finally {
+    S.switching = false;
+    renderCamControls();
   }
 }
 

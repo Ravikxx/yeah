@@ -197,9 +197,14 @@
       </div>
     </div>
     <div class="hud-bottom">
-      <span class="hud-spacer"></span>
+      <div class="hud-spacer"><div class="lens-pills" id="lensPills" role="group" aria-label="Lens" hidden></div></div>
       <button class="rec-btn" id="driveBtn" type="button" aria-label="Start capturing"><span></span></button>
-      <span class="hud-spacer"></span>
+      <div class="hud-spacer hud-spacer-end">
+        <button class="hud-btn hud-btn-label" id="driveFlip" type="button" hidden>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9a8 8 0 0 1 14-3l2 2M20 15a8 8 0 0 1-14 3l-2-2" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M20 3v5h-5M4 21v-5h5" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>
+          Flip
+        </button>
+      </div>
     </div>
   </div>
 
