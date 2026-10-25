@@ -3,21 +3,22 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610251446';
-import * as queue from './queue.js?v=202610251446';
-import * as coverage from './coverage.js?v=202610251446';
-import { findView } from './street.js?v=202610251446';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610251446';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610251446';
-import { coverageLines } from './street.js?v=202610251446';
-import { planTrip } from './directions.js?v=202610251446';
-import { snapToTrack } from './geo.js?v=202610251446';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610251446';
+import { pickMime } from './record.js?v=202610251605';
+import * as queue from './queue.js?v=202610251605';
+import * as coverage from './coverage.js?v=202610251605';
+import { findView } from './street.js?v=202610251605';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610251605';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610251605';
+import { coverageLines } from './street.js?v=202610251605';
+import { planTrip } from './directions.js?v=202610251605';
+import { snapToTrack } from './geo.js?v=202610251605';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610251605';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
 })();
-const MIN_CHUNK_METERS = 10;      // skip pieces where you barely moved; a short last piece is still real footage
+const MIN_CHUNK_METERS = 10;      // skip short pieces where you barely moved; a short last piece is still real footage
+const KEEP_STILL_SECONDS = 20;    // ...but keep longer waits (a red light): stopping and going again is training data
 const VIDEO_BPS = 500_000;        // ~4 MB a minute; plenty for 480p at 15 fps
 
 const S = {
@@ -439,7 +440,8 @@ async function finishChunk(chunk) {
   chunk.parts = [];
   const pts = prepareTrack(chunk.track);
   const moved = pts.length >= 2 ? pts[pts.length - 1].d : 0;
-  if (pts.length < 2 || moved < MIN_CHUNK_METERS || !blob.size) { S.skipped++; return; }
+  const secs = pts.length >= 2 ? pts[pts.length - 1].t - pts[0].t : 0;
+  if (pts.length < 2 || (moved < MIN_CHUNK_METERS && secs < KEEP_STILL_SECONDS) || !blob.size) { S.skipped++; return; }
   S.pieces++;
   await queue.enqueue({
     blob,
