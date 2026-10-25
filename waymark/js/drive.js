@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610252045';
-import * as queue from './queue.js?v=202610252045';
-import * as coverage from './coverage.js?v=202610252045';
-import { findView } from './street.js?v=202610252045';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610252045';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610252045';
-import { coverageLines } from './street.js?v=202610252045';
-import { planTrip } from './directions.js?v=202610252045';
-import * as copilot from './copilot.js?v=202610252045';
-import { searchPlaces } from './api.js?v=202610252045';
-import { snapToTrack } from './geo.js?v=202610252045';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610252045';
+import { pickMime } from './record.js?v=202610252050';
+import * as queue from './queue.js?v=202610252050';
+import * as coverage from './coverage.js?v=202610252050';
+import { findView } from './street.js?v=202610252050';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610252050';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610252050';
+import { coverageLines } from './street.js?v=202610252050';
+import { planTrip } from './directions.js?v=202610252050';
+import * as copilot from './copilot.js?v=202610252050';
+import { searchPlaces } from './api.js?v=202610252050';
+import { snapToTrack } from './geo.js?v=202610252050';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610252050';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -329,6 +329,8 @@ function onFix(pos) {
   while (S.recentFixes.length > 2 && distance(S.recentFixes[0], fix) > 25) S.recentFixes.shift();
   if (distance(S.recentFixes[0], fix) > 8) S.heading = bearing(S.recentFixes[0], fix);
 
+  if (S.odoFix && acc <= 35) S.odo = (S.odo || 0) + distance(S.odoFix, fix); // distance ridden, for the co-pilot's countdown
+  if (acc <= 35) S.odoFix = fix;
   const lk = lookAt(fix, gpsSpeed);
   C.last = lk.look ?? null; // the co-pilot reads this between fixes
   S.gpsSpeed = gpsSpeed;
@@ -559,7 +561,7 @@ async function newMission() {
 // do: its speed next to yours, and why it would slow down. It doesn't record
 // anything or change what gets uploaded.
 
-const CP = { on: false, voice: false, lastSaid: '', lastAt: 0, busy: false };
+const CP = { on: false, voice: false, lastSaid: '', lastAt: 0, sign: null, light: null, secs: 0 };
 const MPH = 2.23694;
 
 function wireCopilot() {
@@ -593,23 +595,55 @@ function stopCopilot() {
   try { speechSynthesis.cancel(); } catch { /* no speech */ }
 }
 
+// Horizontal field of view of the lens in use (for judging distance from a sign's size).
+function hfov() {
+  const name = currentCam()?.name || savedCam().name || '1×';
+  const upright = (el.dcam?.videoHeight || 1) > (el.dcam?.videoWidth || 0);
+  // [upright, sideways]; 1× calibrated from your rides (sign size vs where you stopped: ~46-53°)
+  const base = { '0.5×': [90, 106], '1×': [50, 64], Tele: [15, 20] }[name] || [50, 64];
+  return upright ? base[0] : base[1];
+}
+
+// Alternates: a full look (the model) and a zoomed look for signs far ahead.
 async function loopCopilot() {
+  let n = 0, last = null;
   while (CP.on) {
     const t0 = performance.now();
     if (el.dcam?.videoWidth) {
       try {
-        const r = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null });
-        if (CP.on) showCopilot(r, (performance.now() - t0) / 1000);
+        if (n++ % 2 === 0) {
+          last = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null });
+          CP.secs = (performance.now() - t0) / 1000;
+        } else {
+          const sg = await copilot.signs(el.dcam, hfov());
+          if (sg.stop) CP.sign = { dist: sg.stop.dist, odo: S.odo || 0, at: performance.now() };
+          if (sg.light) CP.light = { ...sg.light, at: performance.now() };
+        }
+        if (CP.on && last) showCopilot(last, CP.secs || 1);
       } catch (err) { setCopilot({ alert: 'Co-pilot hit a problem', detail: err.message || String(err) }); }
     }
-    await new Promise((r) => setTimeout(r, Math.max(150, 1000 - (performance.now() - t0))));
+    await new Promise((r) => setTimeout(r, Math.max(100, 500 - (performance.now() - t0))));
   }
+}
+
+// Distance left to the last stop sign seen: estimated from its size when seen,
+// minus how far you've ridden since (GPS). Forgotten once passed or after 20 s.
+function stopAhead() {
+  const s = CP.sign;
+  if (!s) return null;
+  const left = s.dist - ((S.odo || 0) - s.odo);
+  if (left < -5 || performance.now() - s.at > 20000) { CP.sign = null; return null; }
+  return Math.max(0, left);
 }
 
 function showCopilot(r, secs) {
   const you = S.gpsSpeed != null ? `${Math.round(S.gpsSpeed * MPH)} mph` : '–';
   const turn = r.turn[0] > 0.5 ? 'left' : r.turn[2] > 0.5 ? 'right' : null;
-  const [alert, level] = r.seen.red ? ['Red light: stop', 'stop']
+  const stopIn = stopAhead();
+  const redFar = CP.light && performance.now() - CP.light.at < 4000 && CP.light.red;
+  const [alert, level] = r.seen.red || redFar ? ['Red light: stop', 'stop']
+    : stopIn != null && stopIn < 10 ? ['Stop sign: stop', 'stop']
+    : stopIn != null ? [`Stop sign in ${Math.round(stopIn * 3.281 / 5) * 5} ft`, 'slow']
     : r.seen.carCrossing ? ['Car crossing: wait', 'stop']
     : r.seen.carClosing ? ['Car ahead getting close: slow down', 'slow']
     : r.seen.stop ? ['Stop sign: slow down', 'slow']
@@ -617,8 +651,8 @@ function showCopilot(r, secs) {
     : turn ? [`Turn ${turn} coming`, 'info']
     : ['Clear', 'ok'];
   setCopilot({ alert, level, ai: `${Math.round(r.speed * MPH)} mph`, you, odds: `${Math.round(r.slow * 100)}% slow-down`,
-    detail: `Looks every ${secs.toFixed(1)} s${r.seen.carAhead ? ' · car ahead' : ''}${r.seen.green ? ' · green light' : ''}` });
-  if (level !== 'ok' && level !== 'info') say(alert.split(':')[0]);
+    detail: `Full look every ${(secs * 2).toFixed(1)} s${r.seen.carAhead ? ' · car ahead' : ''}${r.seen.green ? ' · green light' : ''}` });
+  if (level !== 'ok' && level !== 'info') say(alert.startsWith('Stop sign in') ? 'Stop sign ahead' : alert.split(':')[0]);
   else if (turn) say(`Turn ${turn}`);
 }
 

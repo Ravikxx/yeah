@@ -99,6 +99,33 @@ async function detect(img) {
   return out;
 }
 
+// ---------- zoomed look for signs ----------
+// Stop signs (and lights) sit on the right, about a third of the way down. The
+// detector shrinks every picture to 512 px, so a far sign is a few pixels; a
+// crop of that area gets ~2.75x zoom and finds signs ~2-3 s earlier.
+const ZOOM = [0.55, 0.18, 1.0, 0.47]; // x0, y0, x1, y1 as fractions of the frame
+const SIGN_M = 0.76; // a stop sign is 30 in across
+
+export async function signs(video, hfovDeg = 90) {
+  const W = video.videoWidth, H = video.videoHeight;
+  const [x0, y0, x1, y1] = [ZOOM[0] * W, ZOOM[1] * H, ZOOM[2] * W, ZOOM[3] * H].map(Math.round);
+  const w = x1 - x0, h = y1 - y0;
+  cv.width = w; cv.height = h; cx.drawImage(video, x0, y0, w, h, 0, 0, w, h);
+  const px = cx.getImageData(0, 0, w, h).data, n = w * h, x = new Float32Array(3 * n);
+  for (let i = 0; i < n; i++) { x[i] = px[i * 4] / 255; x[n + i] = px[i * 4 + 1] / 255; x[2 * n + i] = px[i * 4 + 2] / 255; }
+  const o = await D.run({ image: new ort.Tensor('float32', x, [3, h, w]) });
+  const f = (W / 2) / Math.tan(hfovDeg * Math.PI / 360); // focal length in pixels
+  let stop = null, light = null;
+  for (let i = 0; i < o.scores.data.length; i++) {
+    const cls = COCO[Number(o.labels.data[i])], sc = o.scores.data[i], b = Array.from(o.boxes.data.slice(i * 4, i * 4 + 4));
+    if (cls === 'stop' && sc >= 0.35 && (!stop || sc > stop.score)) stop = { score: sc, dist: f * SIGN_M / Math.max(1, b[2] - b[0]) };
+    if (cls === 'light' && sc >= 0.5 && (!light || sc > light.score)) {
+      const [r, g] = lightColor(px, w, b); light = { score: sc, red: r > g && r > 0.01, green: g > r && g > 0.01 };
+    }
+  }
+  return { stop, light };
+}
+
 // ---------- features (mirror see.py) ----------
 const size = (x, W, H) => (x ? Math.sqrt(Math.max(0, (x.box[2] - x.box[0]) * (x.box[3] - x.box[1])) / (W * H)) : 0);
 const best = (xs, key) => xs.reduce((a, x) => (a == null || key(x) > key(a) ? x : a), null);
