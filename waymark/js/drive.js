@@ -3,16 +3,16 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610251444';
-import * as queue from './queue.js?v=202610251444';
-import * as coverage from './coverage.js?v=202610251444';
-import { findView } from './street.js?v=202610251444';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610251444';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610251444';
-import { coverageLines } from './street.js?v=202610251444';
-import { planTrip } from './directions.js?v=202610251444';
-import { snapToTrack } from './geo.js?v=202610251444';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610251444';
+import { pickMime } from './record.js?v=202610251446';
+import * as queue from './queue.js?v=202610251446';
+import * as coverage from './coverage.js?v=202610251446';
+import { findView } from './street.js?v=202610251446';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610251446';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610251446';
+import { coverageLines } from './street.js?v=202610251446';
+import { planTrip } from './directions.js?v=202610251446';
+import { snapToTrack } from './geo.js?v=202610251446';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610251446';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -102,9 +102,11 @@ async function start() {
   S.listed = f.dlisted.value === '1';
   el.driveStart.disabled = true;
   startGps(); // ask for location right away, while the tap still counts (iPhone only prompts then)
-  startCompass(); // same for motion & orientation
+  // (Motion & orientation is asked on the record tap: iPhone handles one prompt per tap,
+  // and asking for it here blocked the camera prompt.)
   try {
-    S.stream = await openCamera(savedCam());
+    S.stream = await Promise.race([openCamera(savedCam()),
+      new Promise((_, no) => setTimeout(() => no(new Error('no answer from the camera after 15 s; close other apps using it and try again')), 15000))]);
   } catch (err) {
     el.driveStart.disabled = false;
     return showError(err?.name === 'NotAllowedError'
@@ -388,6 +390,7 @@ function drawMapCoverage(idx) {
 
 function startCapture() {
   if (!S.stream) return;
+  startCompass(); // inside this tap, so iPhone can ask for motion & orientation
   S.capturing = true;
   S.session = Math.random().toString(36).slice(2, 10);
   S.sessionT0 = performance.now();
