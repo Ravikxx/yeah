@@ -30,6 +30,7 @@ export function buildIndex(segments) {
     if (pts.length < 2 || pts[pts.length - 1].d < SAMPLE_M * 2) continue;
     const seg = { ...raw, pts, samples: [] };
     const total = pts[pts.length - 1].d;
+    const scanned = pts.some((q) => q.look != null && Math.abs(q.look) > LOOK_MAX);
     // Every SAMPLE_M meters, plus the exact end so consecutive pieces of a
     // recording meet with no hole between them.
     const ds = [];
@@ -39,7 +40,9 @@ export function buildIndex(segments) {
       const p = atDistance(pts, d);
       const heading = headingAt(pts, d);
       if (heading == null) continue; // standing still: no direction to file it under
-      const s = { seg, d, t: p.t, lat: p.lat, lng: p.lng, heading };
+      const t = scanned ? forwardTime(pts, p) : p.t;
+      if (t == null) continue; // camera was turned to the side here (looking for traffic)
+      const s = { seg, d, t, lat: p.lat, lng: p.lng, heading };
       seg.samples.push(s);
       const key = cellKey(p.lat, p.lng);
       if (!grid.has(key)) grid.set(key, []);
@@ -48,6 +51,19 @@ export function buildIndex(segments) {
     segs.push(seg);
   }
   return { segs, grid, byId: new Map(segs.map((s) => [s.id, s])) };
+}
+
+// Time to show for a spot: the frame at `p`, unless the rider had the camera
+// turned to the side then (look recorded from the compass, e.g. scanning for
+// cross traffic at a stop). Then another moment at the same spot, facing ahead.
+const LOOK_MAX = 35;
+function forwardTime(pts, p) {
+  const near = pts.filter((q) => Math.abs(q.t - p.t) <= 15);
+  const at = near.reduce((a, q) => (Math.abs(q.t - p.t) < Math.abs(a.t - p.t) ? q : a), near[0] || { t: p.t, look: null });
+  if (at.look == null || Math.abs(at.look) <= LOOK_MAX) return p.t;
+  const ok = near.filter((q) => q.look != null && Math.abs(q.look) <= LOOK_MAX && distance(q, p) < 4);
+  if (!ok.length) return null;
+  return ok.reduce((a, q) => (Math.abs(q.t - p.t) < Math.abs(a.t - p.t) ? q : a)).t;
 }
 
 const cellKey = (lat, lng) => `${Math.floor(lat / CELL)}:${Math.floor(lng / CELL)}`;

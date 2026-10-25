@@ -48,6 +48,7 @@ function leaveDrive() {
   if (S.capturing) stopCapture(); // keep the footage: pieces are already queued
   stopCamera();
   stopGps();
+  stopCompass();
   unsubs.forEach((u) => u());
   unsubs = [];
 }
@@ -91,6 +92,7 @@ async function start() {
   S.listed = f.dlisted.value === '1';
   el.driveStart.disabled = true;
   startGps(); // ask for location right away, while the tap still counts (iPhone only prompts then)
+  startCompass(); // same for motion & orientation
   try {
     S.stream = await navigator.mediaDevices.getUserMedia({ video: CAMERA, audio: false });
     S.stream = await ultraWide(S.stream);
@@ -137,6 +139,55 @@ function stopCamera() {
   S.stream?.getTracks().forEach((t) => t.stop());
   S.stream = null;
   if (el.dcam) el.dcam.srcObject = null;
+}
+
+// ---------- compass: where the camera points ----------
+// Turning the handlebars at a stop to look for cross traffic points the camera
+// sideways. The compass says where the phone points; comparing it with your
+// direction of travel gives `look` (degrees, + = right), so street view can skip
+// those frames and training can label them. The phone's mounting and the
+// compass's own offset are learned while you ride straight.
+
+const C = { heading: null, offsets: [] };
+const wrap = (a) => ((a + 540) % 360) - 180;
+
+function startCompass() {
+  if (C.on || !('DeviceOrientationEvent' in window)) return;
+  C.on = true;
+  const listen = () => {
+    window.addEventListener('deviceorientationabsolute', onOrient);
+    window.addEventListener('deviceorientation', onOrient);
+  };
+  // iPhone asks first, and only from a tap (this runs inside the Start tap).
+  if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission().then((r) => { if (r === 'granted') listen(); }).catch(() => {});
+  } else listen();
+}
+
+function stopCompass() {
+  window.removeEventListener('deviceorientationabsolute', onOrient);
+  window.removeEventListener('deviceorientation', onOrient);
+  C.on = false; C.heading = null;
+}
+
+function onOrient(e) {
+  if (Number.isFinite(e.webkitCompassHeading)) C.heading = e.webkitCompassHeading; // iPhone
+  else if (e.absolute && Number.isFinite(e.alpha)) C.heading = (360 - e.alpha) % 360; // Android
+}
+
+function lookAt(fix, gpsSpeed) {
+  if (C.heading == null) return {};
+  const compass = Math.round(C.heading);
+  const moving = (gpsSpeed ?? 0) > 2 && S.heading != null;
+  if (moving) {
+    C.offsets.push(wrap(compass - S.heading));
+    if (C.offsets.length > 60) C.offsets.shift();
+  }
+  if (C.offsets.length < 5 || S.heading == null) return { compass, look: null };
+  // circular median-ish: average around the first offset
+  const ref = C.offsets[0];
+  const off = ref + C.offsets.reduce((a, o) => a + wrap(o - ref), 0) / C.offsets.length;
+  return { compass, look: Math.round(wrap(compass - off - S.heading)) };
 }
 
 // ---------- GPS ----------
@@ -193,7 +244,7 @@ function onFix(pos) {
   if (S.capturing && S.chunk) {
     const prev = S.chunk.track[S.chunk.track.length - 1];
     if (prev && acc <= 35) S.meters += distance(prev, fix);
-    S.chunk.track.push({ t: (now - S.chunk.t0) / 1000, lat, lng, acc, speed: gpsSpeed, heading: gpsHeading });
+    S.chunk.track.push({ t: (now - S.chunk.t0) / 1000, lat, lng, acc, speed: gpsSpeed, heading: gpsHeading, ...lookAt(fix, gpsSpeed) });
     S.trail?.eachLayer((l) => l.addLatLng([lat, lng]));
   }
   S.lastFix = fix;
@@ -313,7 +364,8 @@ async function finishChunk(chunk) {
     blob,
     meta: {
       kind: 'capture', mode: S.mode, listed: S.listed, session: S.session,
-      title: '', track: chunk.track.map((p) => [p.t, p.lat, p.lng, p.acc, p.speed ?? null, p.heading ?? null]),
+      title: '', track: chunk.track.map((p) => (p.compass == null ? [p.t, p.lat, p.lng, p.acc, p.speed ?? null, p.heading ?? null]
+        : [p.t, p.lat, p.lng, p.acc, p.speed ?? null, p.heading ?? null, p.compass, p.look])),
       nav: chunk.nav,
     },
     createdAt: chunk.startedAt,
@@ -372,19 +424,29 @@ async function newMission() {
       toast('Couldn’t find a stretch of this street that far without turning. Try a shorter distance.');
       return;
     }
-    for (let tries = 0; tries < 5; tries++) {
-      // Somewhere between 40% and 100% of the radius away, any direction.
-      const dist = radius * (0.4 + 0.6 * Math.random()), deg = Math.random() * 360;
+    let fallback = null;
+    for (let tries = 0; tries < 6; tries++) {
+      // Somewhere between 40% and 100% of the radius away: ahead of you
+      // (within 90° of where you're going) when you're moving, so you don't
+      // have to turn around; any direction before the first GPS heading.
+      const dist = radius * (0.4 + 0.6 * Math.random());
+      const deg = S.heading != null ? S.heading + (Math.random() * 2 - 1) * 90 : Math.random() * 360;
       const dest = {
         lat: fix.lat + (dist * Math.cos(deg * Math.PI / 180)) / 111320,
         lng: fix.lng + (dist * Math.sin(deg * Math.PI / 180)) / (111320 * Math.cos(fix.lat * Math.PI / 180)),
       };
       let trip;
-      try { trip = await planTrip(S.mode, fix, dest); } catch { continue; }
+      try { trip = await planTrip(S.mode, fix, dest, S.heading); } catch { continue; }
       const end = trip.latlngs[trip.latlngs.length - 1];
       // The router snaps to the nearest road; skip spots it can't reach sensibly.
       if (trip.distance < Math.min(150, radius * 0.3) || distance(fix, { lat: end[0], lng: end[1] }) > radius * 1.1 || trip.distance > radius * 3) continue;
-      startMission(trip, radius);
+      // Keep looking for a trip with no U-turns; settle for one if that's all there is.
+      if (trip.steps.some((st) => st.maneuver?.modifier === 'uturn')) { fallback ??= trip; continue; }
+      fallback = trip;
+      break;
+    }
+    if (fallback) {
+      startMission(fallback, radius);
       if (!S.capturing) toast('Destination set. Tap the red button to start capturing, then follow the directions.');
       return;
     }
@@ -410,7 +472,7 @@ async function sameStreetMission(fix, radius) {
         lng: fix.lng + (dist * Math.sin(deg * Math.PI / 180)) / (111320 * Math.cos(fix.lat * Math.PI / 180)),
       };
       let trip;
-      try { trip = await planTrip(S.mode, fix, dest); } catch { continue; }
+      try { trip = await planTrip(S.mode, fix, dest, deg); } catch { continue; }
       const road = trip.steps[0]?.name;
       const turns = trip.steps.slice(1).filter((s) => s.maneuver?.type !== 'arrive');
       const sameStreet = road && turns.every((s) => s.name === road && !/uturn|sharp/.test(s.maneuver?.modifier || ''));
@@ -468,7 +530,7 @@ async function missionFix(fix) {
     if (++M.off >= 2 && !M.rerouting) {
       M.rerouting = true;
       try {
-        const trip = await planTrip(S.mode, fix, plan.to);
+        const trip = await planTrip(S.mode, fix, plan.to, S.heading); // keep going the way you are
         if (M.plan === plan) startMission(trip, M.radius);
       } catch { /* try again on the next fix */ }
       M.rerouting = false;

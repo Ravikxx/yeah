@@ -33,7 +33,7 @@ export function turnAngle(from, to) {
 
 // Server/wire format is [t, lat, lng, acc]; accept either shape.
 export function prepareTrack(raw, maxAccuracy = 35) {
-  let pts = raw.map((p) => (Array.isArray(p) ? { t: p[0], lat: p[1], lng: p[2], acc: p[3] } : { ...p }));
+  let pts = raw.map((p) => (Array.isArray(p) ? { t: p[0], lat: p[1], lng: p[2], acc: p[3], look: p[7] ?? null } : { ...p }));
   pts.sort((a, b) => a.t - b.t);
   const good = pts.filter((p) => p.acc == null || p.acc <= maxAccuracy);
   if (good.length >= 2) pts = good;

@@ -169,3 +169,19 @@ test('a street captured both ways is drawn down its middle, without jogs', () =>
   assert.ok(maxOff < 4, `drawn up to ${maxOff.toFixed(1)} m off the middle (lanes are 5 m either side)`);
   assert.ok(maxJog < 4, `sideways jog of ${maxJog.toFixed(1)} m between neighbors`);
 });
+
+test('a stop where the rider scanned left and right shows the facing-ahead moment', () => {
+  // North 100 m at 8 m/s, stop 6 s at 100 m (looking left, then right), north again.
+  const a = drive(O, [[0, 96]]);
+  const [t0, lat, lng] = a[a.length - 1];
+  // GPS creeps ~0.8 m per fix while stopped, so the 100 m sample lands mid-scan.
+  const looks6 = [[0, 0], [300, -60], [300, -60], [60, 60], [60, 60], [0, 0]];
+  const stop = looks6.map(([c, l], k) => [t0 + k + 1, lat + 0.8 * (k + 1) * M_LAT, lng, 5, 0, 0, c, l]);
+  const b = drive([stop[5][1], lng], [[0, 96]]).slice(1).map(([t, la, ln, acc]) => [t + t0 + 6, la, ln, acc, 8, 0, 0, 0]);
+  const idx = buildIndex([{ id: 'scan', createdAt: 1, track: [...a, ...stop, ...b] }]);
+  const looks = new Map([...a, ...stop, ...b].map((p) => [p[0], p[7] ?? 0]));
+  for (const s of idx.segs[0].samples) {
+    const near = [...looks.keys()].reduce((x, k) => (Math.abs(k - s.t) < Math.abs(x - s.t) ? k : x));
+    assert.ok(Math.abs(looks.get(near)) <= 35, `sample at ${s.d.toFixed(0)} m uses a sideways frame (t=${s.t})`);
+  }
+});

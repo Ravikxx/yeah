@@ -15,7 +15,7 @@ training.
 Output:
   data/manifest.json                 everything the server returned
   data/<id>/video.mp4|webm           the footage
-  data/<id>/telemetry.csv            one row per GPS fix
+  data/<id>/telemetry.csv            one row per GPS fix (camera_look_deg: + = camera turned right of travel)
   data/<id>/directions.csv           road + instruction followed (destination trips)
   data/<id>/frames/000001.jpg ...    with --fps
   data/frames.csv                    one row per frame, all recordings
@@ -59,7 +59,8 @@ def telemetry(track):
     """One row per GPS fix, with speed and heading derived from the track
     (smoothed over about 2 s / 10 m) next to the phone's own values."""
     pts = [dict(t=p[0], lat=p[1], lng=p[2], acc=p[3] if len(p) > 3 else None,
-                gps_speed=p[4] if len(p) > 4 else None, gps_heading=p[5] if len(p) > 5 else None) for p in track]
+                gps_speed=p[4] if len(p) > 4 else None, gps_heading=p[5] if len(p) > 5 else None,
+                compass=p[6] if len(p) > 6 else None, look=p[7] if len(p) > 7 else None) for p in track]
     pts.sort(key=lambda p: p['t'])
     d = 0.0
     for i, p in enumerate(pts):
@@ -134,10 +135,11 @@ def main():
         pts = telemetry(r['track'])
         with open(os.path.join(d, 'telemetry.csv'), 'w', newline='') as f:
             w = csv.writer(f)
-            w.writerow(['t_s', 'lat', 'lng', 'accuracy_m', 'speed_mps', 'heading_deg', 'gps_speed_mps', 'gps_heading_deg', 'distance_m'])
+            w.writerow(['t_s', 'lat', 'lng', 'accuracy_m', 'speed_mps', 'heading_deg', 'gps_speed_mps', 'gps_heading_deg', 'distance_m',
+                        'compass_deg', 'camera_look_deg'])
             for p in pts:
                 w.writerow([fmt(p['t']), fmt(p['lat'], 7), fmt(p['lng'], 7), fmt(p['acc'], 1), fmt(p['speed']), fmt(p['heading'], 1),
-                            fmt(p['gps_speed']), fmt(p['gps_heading'], 1), fmt(p['dist'], 1)])
+                            fmt(p['gps_speed']), fmt(p['gps_heading'], 1), fmt(p['dist'], 1), fmt(p['compass'], 0), fmt(p['look'], 0)])
         if r.get('nav'):
             with open(os.path.join(d, 'directions.csv'), 'w', newline='') as f:
                 w = csv.writer(f)
@@ -169,7 +171,8 @@ def main():
                 n = next((e for e in reversed(nav) if e['t'] <= t + 0.5), None)  # directions shown at this moment
                 frame_rows.append([os.path.join(rid, 'frames', fn), rid, round(t, 3), fmt(p['lat'], 7), fmt(p['lng'], 7),
                                    fmt(p['speed']), fmt(p['heading'], 1), fmt(p['acc'], 1), r.get('mode'), r.get('kind'), r.get('createdAt'),
-                                   (n or {}).get('road', ''), (n or {}).get('next', ''), fmt((n or {}).get('nextIn'), 0), fmt((n or {}).get('left'), 0)])
+                                   (n or {}).get('road', ''), (n or {}).get('next', ''), fmt((n or {}).get('nextIn'), 0), fmt((n or {}).get('left'), 0),
+                                   fmt(p['look'], 0)])
             line += f', {len(files)} frames'
         print(line)
 
@@ -177,7 +180,7 @@ def main():
         with open(os.path.join(a.out, 'frames.csv'), 'w', newline='') as f:
             w = csv.writer(f)
             w.writerow(['frame', 'recording', 't_s', 'lat', 'lng', 'speed_mps', 'heading_deg', 'accuracy_m', 'mode', 'kind', 'recorded_at_ms',
-                        'road', 'instruction', 'instruction_in_m', 'destination_in_m'])
+                        'road', 'instruction', 'instruction_in_m', 'destination_in_m', 'camera_look_deg'])
             w.writerows(frame_rows)
         print(f'frames.csv: {len(frame_rows)} labeled frames')
 

@@ -7,7 +7,7 @@ import { searchPlaces } from './api.js';
 import * as coverage from './coverage.js';
 import * as stage from './stage.js';
 import { matchPlan, findView, headingAt } from './street.js';
-import { prepareTrack, atDistance, snapToTrack, distance, formatDistance, formatDuration } from './geo.js';
+import { prepareTrack, atDistance, snapToTrack, distance, bearing, formatDistance, formatDuration } from './geo.js';
 import { $, esc, toast, navLine, pinIcon, arrowGlyph, cueGlyph, fitPadding } from './ui.js';
 
 let map, layer;
@@ -347,6 +347,9 @@ async function onLiveFix(pos) {
   if (!N) return;
   const me = { lat: pos.coords.latitude, lng: pos.coords.longitude };
   lastFix = { ...me, at: performance.now() };
+  // Direction of travel from the last ~10 m, so a new route doesn't start with a U-turn.
+  if (!N.from) N.from = me;
+  else if (distance(N.from, me) > 10) { N.heading = bearing(N.from, me); N.from = me; }
   if (!N.lastLoad || distance(N.lastLoad, me) > 300) {
     N.lastLoad = me;
     coverage.loadAround(me.lat, me.lng, 700).catch(() => {});
@@ -359,7 +362,7 @@ async function onLiveFix(pos) {
     if (N.off >= 2 && performance.now() - N.lastReroute > 15000) {
       N.lastReroute = performance.now();
       try {
-        const trip = await planTrip(plan.mode, me, plan.to);
+        const trip = await planTrip(plan.mode, me, plan.to, N.heading ?? null);
         if (!N) return;
         setPlan(trip);
         stage.miniMap() && openNavStage('live');

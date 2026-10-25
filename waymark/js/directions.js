@@ -44,8 +44,8 @@ export function maneuverTitle(s) {
 
 // Fetches a trip and flattens it into what the map and signs need:
 // latlngs for the line, and maneuvers with their distance along the trip.
-export async function planTrip(mode, from, to) {
-  const data = await getDirections(mode, from, to);
+export async function planTrip(mode, from, to, bearing = null) {
+  const data = await getDirections(mode, from, to, bearing);
   if (data.code !== 'Ok' || !data.routes?.length) throw new Error('No route found between those points.');
   const r = data.routes[0];
   const latlngs = r.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
