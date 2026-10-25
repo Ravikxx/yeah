@@ -19,8 +19,11 @@ async function request(path, opts = {}) {
 export const listRoutes = () => request('/api/routes').then((b) => b.routes);
 export const getRoute = (id) => request(`/api/routes/${encodeURIComponent(id)}`);
 // bearing: your direction of travel, so the route starts the way you're going.
-export const getDirections = (mode, from, to, bearing = null) =>
-  request(`/api/directions?mode=${mode}&from=${from.lat.toFixed(6)},${from.lng.toFixed(6)}&to=${to.lat.toFixed(6)},${to.lng.toFixed(6)}${bearing == null ? '' : `&bearing=${Math.round(bearing)}`}`);
+// via: a point to pass through; alternatives: also return the router's other routes.
+const ll = (p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
+export const getDirections = (mode, from, to, bearing = null, { via = null, alternatives = false } = {}) =>
+  request(`/api/directions?mode=${mode}&from=${ll(from)}&to=${ll(to)}${bearing == null ? '' : `&bearing=${Math.round(bearing)}`}` +
+    `${via ? `&via=${ll(via)}` : ''}${alternatives ? '&alternatives=1' : ''}`);
 export const getCoverage = ([w, s, e, n], ids = []) =>
   request(`/api/coverage?bbox=${[w, s, e, n].map((v) => v.toFixed(5)).join(',')}${ids.length ? `&ids=${ids.join(',')}` : ''}`)
     .then((b) => b.segments);

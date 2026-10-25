@@ -3,16 +3,17 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610251739';
-import * as queue from './queue.js?v=202610251739';
-import * as coverage from './coverage.js?v=202610251739';
-import { findView } from './street.js?v=202610251739';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610251739';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610251739';
-import { coverageLines } from './street.js?v=202610251739';
-import { planTrip } from './directions.js?v=202610251739';
-import { snapToTrack } from './geo.js?v=202610251739';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610251739';
+import { pickMime } from './record.js?v=202610251851';
+import * as queue from './queue.js?v=202610251851';
+import * as coverage from './coverage.js?v=202610251851';
+import { findView } from './street.js?v=202610251851';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610251851';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610251851';
+import { coverageLines } from './street.js?v=202610251851';
+import { planTrip } from './directions.js?v=202610251851';
+import { searchPlaces } from './api.js?v=202610251851';
+import { snapToTrack } from './geo.js?v=202610251851';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610251851';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -76,10 +77,13 @@ function wire() {
     switchCamera(front ? { facing: 'environment', name: last } : { facing: 'user', name: last });
   });
   document.getElementById('missionBtn').addEventListener('click', newMission);
+  wirePlaces();
   for (const r of document.querySelectorAll('input[name="ridemode"]')) {
     r.addEventListener('change', () => {
       const mode = rideMode();
       document.getElementById('missionOpts').hidden = mode === 'free';
+      document.getElementById('missionChoose').hidden = mode !== 'dest';
+      document.getElementById('backRoadsPick').hidden = mode !== 'dest';
       if (mode === 'free') endMission();
     });
   }
@@ -529,6 +533,10 @@ async function newMission() {
       break;
     }
     if (fallback) {
+      if (backRoads()) { // same destination, quieter way there
+        const end = fallback.latlngs[fallback.latlngs.length - 1];
+        fallback = await planTrip(S.mode, fix, { lat: end[0], lng: end[1] }, S.heading, { backRoads: true }).catch(() => fallback);
+      }
       startMission(fallback, radius);
       if (!S.capturing) toast('Destination set. Tap the red button to start capturing, then follow the directions.');
       return;
@@ -537,6 +545,84 @@ async function newMission() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Go';
+  }
+}
+
+// ---------- your own destinations ----------
+// Search for a place (or pick one you used before) and get directions there.
+// Back roads: prefer quiet streets (see directions.js). Neither is recorded as
+// a model input; the training data only has the instructions you followed.
+
+const PLACES_KEY = 'waymark.places', BACK_KEY = 'waymark.backRoads';
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } },
+};
+const backRoads = () => document.getElementById('backRoads').checked;
+
+function wirePlaces() {
+  const box = document.getElementById('backRoads');
+  box.checked = store.get(BACK_KEY, false);
+  box.addEventListener('change', () => store.set(BACK_KEY, box.checked));
+  const sheet = document.getElementById('placeSheet'), q = document.getElementById('placeQuery');
+  const results = document.getElementById('placeResults');
+  document.getElementById('missionChoose').addEventListener('click', () => {
+    sheet.hidden = false; results.hidden = true; q.value = ''; renderSaved(); q.focus();
+  });
+  document.getElementById('placeClose').addEventListener('click', () => { sheet.hidden = true; });
+  let timer, token = 0, found = [];
+  q.addEventListener('input', () => {
+    clearTimeout(timer);
+    const text = q.value.trim();
+    if (text.length < 3) { results.hidden = true; return; }
+    timer = setTimeout(async () => {
+      const my = ++token;
+      results.hidden = false;
+      results.innerHTML = '<li class="meta">Searching…</li>';
+      try {
+        found = await searchPlaces(text, S.lastFix);
+        if (my !== token) return;
+        results.innerHTML = found.length ? found.map((r, i) => `<li><button type="button" class="place-go" data-i="${i}"><b>${esc(r.name)}</b><span>${esc(r.address)}</span></button></li>`).join('')
+          : '<li class="meta">No places found. Try adding the street or town.</li>';
+      } catch (err) {
+        if (my === token) results.innerHTML = `<li class="meta">${esc(err.message)}</li>`;
+      }
+    }, 350);
+  });
+  results.addEventListener('click', (e) => {
+    const b = e.target.closest('.place-go');
+    if (b) goTo(found[Number(b.dataset.i)]);
+  });
+  document.getElementById('placeSaved').addEventListener('click', (e) => {
+    const saved = store.get(PLACES_KEY, []);
+    const x = e.target.closest('.place-x');
+    if (x) { saved.splice(Number(x.dataset.i), 1); store.set(PLACES_KEY, saved); renderSaved(); return; }
+    const b = e.target.closest('.place-go');
+    if (b) goTo(saved[Number(b.dataset.i)]);
+  });
+}
+
+function renderSaved() {
+  const saved = store.get(PLACES_KEY, []);
+  document.getElementById('placeSavedLabel').hidden = !saved.length;
+  document.getElementById('placeSaved').innerHTML = saved.map((p, i) => `<li>
+    <button type="button" class="place-go" data-i="${i}"><b>${esc(p.name)}</b><span>${esc(p.address || '')}</span></button>
+    <button type="button" class="place-x" data-i="${i}" aria-label="Remove ${esc(p.name)}">×</button></li>`).join('');
+}
+
+async function goTo(place) {
+  if (!place) return;
+  const fix = S.lastFix;
+  if (!fix) { toast('Waiting for GPS before getting directions.'); return; }
+  const saved = store.get(PLACES_KEY, []).filter((p) => !(Math.abs(p.lat - place.lat) < 1e-5 && Math.abs(p.lng - place.lng) < 1e-5));
+  store.set(PLACES_KEY, [{ name: place.name, address: place.address || '', lat: place.lat, lng: place.lng }, ...saved].slice(0, 12));
+  document.getElementById('placeSheet').hidden = true;
+  try {
+    const trip = await planTrip(S.mode, fix, { lat: place.lat, lng: place.lng }, S.heading, { backRoads: backRoads() });
+    startMission(trip, 0);
+    toast(`Directions to ${place.name}${backRoads() ? ' on back roads' : ''}. ${formatDistance(trip.distance)}.`);
+  } catch (err) {
+    toast(err.message || 'Couldn’t get directions there.');
   }
 }
 
@@ -613,7 +699,7 @@ async function missionFix(fix) {
     if (++M.off >= 2 && !M.rerouting) {
       M.rerouting = true;
       try {
-        const trip = await planTrip(S.mode, fix, plan.to, S.heading); // keep going the way you are
+        const trip = await planTrip(S.mode, fix, plan.to, S.heading, { backRoads: backRoads() }); // keep going the way you are
         if (M.plan === plan) startMission(trip, M.radius);
       } catch { /* try again on the next fix */ }
       M.rerouting = false;

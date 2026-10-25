@@ -673,3 +673,26 @@ fieldset.field legend { padding: 0; margin-bottom: 6px; }
 @media (max-width: 600px) {
   .nav-controls { padding-left: max(16px, env(safe-area-inset-left)); padding-bottom: calc(max(16px, env(safe-area-inset-bottom)) + 136px); }
 }
+
+/* Drive: choose your own destination */
+.place-sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 6; max-height: 70%; overflow-y: auto;
+  display: grid; gap: 10px; align-content: start;
+  padding: 14px max(16px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: #0E1A15; color: #fff; border-top: 3px solid #5B8EFF; border-radius: 18px 18px 0 0;
+}
+.place-head { display: flex; align-items: center; justify-content: space-between; font-size: 1.1rem; }
+.place-sheet input[type=search] {
+  min-height: 44px; border-radius: 10px; border: 1.5px solid rgb(255 255 255 / .5); background: #16251F; color: #fff;
+  font: 600 1rem var(--f-body); padding: 0 12px;
+}
+.place-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.place-list li { display: flex; align-items: center; gap: 8px; }
+.place-list .place-go {
+  flex: 1; min-width: 0; text-align: left; display: grid; gap: 2px; padding: 10px 12px; border-radius: 10px; cursor: pointer;
+  border: 1px solid rgb(255 255 255 / .2); background: rgb(255 255 255 / .06); color: #fff; font: 700 .95rem var(--f-body);
+}
+.place-list .place-go span { font-weight: 500; font-size: .8rem; color: rgb(255 255 255 / .7); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.place-list .place-x { min-width: 40px; min-height: 40px; border: 0; border-radius: 10px; background: transparent; color: rgb(255 255 255 / .7); font-size: 1.2rem; cursor: pointer; }
+.place-list .meta { color: rgb(255 255 255 / .7); font-size: .9rem; padding: 6px 2px; }
+.place-label { margin: 6px 0 0; font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: rgb(255 255 255 / .6); }
