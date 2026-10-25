@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610252306';
-import * as queue from './queue.js?v=202610252306';
-import * as coverage from './coverage.js?v=202610252306';
-import { findView } from './street.js?v=202610252306';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610252306';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610252306';
-import { coverageLines } from './street.js?v=202610252306';
-import { planTrip } from './directions.js?v=202610252306';
-import * as copilot from './copilot.js?v=202610252306';
-import { searchPlaces } from './api.js?v=202610252306';
-import { snapToTrack } from './geo.js?v=202610252306';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610252306';
+import { pickMime } from './record.js?v=202610252308';
+import * as queue from './queue.js?v=202610252308';
+import * as coverage from './coverage.js?v=202610252308';
+import { findView } from './street.js?v=202610252308';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610252308';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610252308';
+import { coverageLines } from './street.js?v=202610252308';
+import { planTrip } from './directions.js?v=202610252308';
+import * as copilot from './copilot.js?v=202610252308';
+import { searchPlaces } from './api.js?v=202610252308';
+import { snapToTrack } from './geo.js?v=202610252308';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610252308';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -335,6 +335,7 @@ function onFix(pos) {
   const lk = lookAt(fix, gpsSpeed);
   C.last = lk.look ?? null; // the co-pilot reads this between fixes
   S.gpsSpeed = gpsSpeed;
+  if (gpsSpeed != null) S.speedHist = [...(S.speedHist || []).filter((q) => now - q.at < 6000), { at: now, v: gpsSpeed }];
   if (S.capturing && S.chunk) {
     const prev = S.chunk.track[S.chunk.track.length - 1];
     if (prev && acc <= 35) S.meters += distance(prev, fix);
@@ -628,21 +629,28 @@ async function loopCopilot() {
   // Cars are tracked several times a second (cheap); the detector finds new cars about once a
   // second; the full model look and the zoomed sign look take turns every couple of seconds.
   const T = copilot.makeTracker();
-  let last = null, lastDet = 0, lastFull = -1e9, lastZoom = -1e9;
+  let last = null, lastDet = 0, nextFull = 0, lastZoom = -1e9, pairStep = 0;
   const feed = (r, now) => { T.addDetections(r.dets, r.frame.g, r.frame.W, r.frame.H, now / 1000); track(r.frame, now); };
   const track = (fr, now) => {
     const cars = T.update(fr.g, now / 1000, S.gpsSpeed ?? 0, hfov(), fr.W, fr.H);
     CP.crossingAt = cars.some((c) => c.crossing) ? now : CP.crossingAt;
     CP.closingAt = cars.some((c) => c.closingIn) ? now : CP.closingAt;
+    CP.movingAt = cars.some((c) => c.moving) ? now : CP.movingAt;
   };
   while (CP.on) {
     const t0 = performance.now(); let op = 'track';
     if (el.dcam?.videoWidth) {
       try {
-        if (t0 - lastFull > 2000) { op = 'look';
+        const key = CP.key = keyMoment(last);
+        if (t0 >= nextFull) { op = 'look';
           last = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null, limit: limitNow() });
-          CP.secs = (performance.now() - t0) / 1000; lastFull = lastDet = performance.now(); feed(last, lastFull);
-        } else if (t0 - lastZoom > 2000) { op = 'signs';
+          const done = performance.now();
+          CP.secs = (done - t0) / 1000; lastDet = done; feed(last, done);
+          // key moments: a look every second. Otherwise looks in pairs 1 s apart (so the model's
+          // "1 s ago" input is real), then a 2 s pause.
+          pairStep = key ? 0 : pairStep + 1;
+          nextFull = t0 + (key || pairStep % 2 === 1 ? 1000 : 3000);
+        } else if (t0 - lastZoom > (CP.sign || CP.cand ? 1500 : 2000) && nextFull - t0 > 400) { op = 'signs';
           const sg = await copilot.signs(el.dcam, hfov()); lastZoom = performance.now();
           // a stop sign counts once two zoomed looks in a row (within 3 s) see it with confidence;
           // one-off hits (red lights of cars, other red signs) are ignored
@@ -651,7 +659,7 @@ async function loopCopilot() {
             CP.cand = { at: lastZoom };
           }
           if (sg.light) CP.light = { ...sg.light, at: lastZoom };
-        } else if (t0 - lastDet > 1000) { op = 'detect';
+        } else if (t0 - lastDet > 1000 && nextFull - t0 > 600) { op = 'detect';
           const r = await copilot.detectFrame(el.dcam); lastDet = performance.now(); feed(r, lastDet);
         } else {
           track(copilot.frameGray(el.dcam), t0);
@@ -661,6 +669,27 @@ async function loopCopilot() {
     }
     await new Promise((r) => setTimeout(r, Math.max(30, 120 - (performance.now() - t0))));
   }
+}
+
+// A key moment: something's happening, so the model looks every second (as the
+// training uses 3 frames a second around these moments): a stop sign or light
+// ahead, a car moving nearby, a turn coming up, or you slowing down / stopping /
+// pulling away.
+function keyMoment(r) {
+  const now = performance.now();
+  if (CP.sign || (CP.cand && now - CP.cand.at < 3000)) return true;
+  if ((CP.light && now - CP.light.at < 4000) || r?.seen?.red || r?.seen?.green || r?.seen?.stop) return true;
+  if (now - (CP.movingAt || -1e9) < 3000) return true;
+  const nav = S.navNow;
+  if (nav?.inM != null && nav.inM < 50 && /left|right|u-turn/i.test(nav.instruction || '')) return true;
+  const sp = (S.speedHist || []).filter((q) => now - q.at < 5000).map((q) => q.v);
+  if (sp.length >= 2) {
+    const v = sp[sp.length - 1], hi = Math.max(...sp), lo = Math.min(...sp);
+    if (hi > 2 && v < 0.7 * hi) return true;   // slowing down
+    if (v < 0.6 && hi > 1.5) return true;      // just stopped
+    if (lo < 0.6 && v > 1.0) return true;      // pulling away
+  }
+  return false;
 }
 
 // Distance left to the last stop sign seen: estimated from its size when seen,
@@ -695,7 +724,7 @@ function showCopilot(r, secs) {
   const lim = limitNow(), aim = Math.min(lim, BIKE_MAX_MPH);
   const ai = Math.min(r.speed * MPH, aim);
   setCopilot({ alert, level, ai: `${Math.round(ai)} mph`, you, odds: `Limit ${lim}${CP.limit ? '' : '?'} · aim ${aim} · ${Math.round(r.slow * 100)}% slow-down`,
-    detail: `Model look ${secs.toFixed(1)} s on ${copilot.backend().detector}${r.seen.carAhead ? ' · car ahead' : ''}${r.seen.green ? ' · green light' : ''}` });
+    detail: `Model look ${secs.toFixed(1)} s on ${copilot.backend().detector}${CP.key ? ' · focused' : ''}${r.seen.carAhead ? ' · car ahead' : ''}${r.seen.green ? ' · green light' : ''}` });
   if (level !== 'ok' && level !== 'info') say(alert.startsWith('Stop sign in') ? 'Stop sign ahead' : alert.split(':')[0]);
   else if (turn) say(`Turn ${turn}`);
 }

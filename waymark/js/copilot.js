@@ -465,8 +465,9 @@ export function predictRow(x) { // x: the 1056 inputs; exported for the self-tes
 }
 
 // ---------- one look ----------
-const S = { hist: [], prevEmb: null, prevDets: null, prevLook: null, stops: [] };
-export function reset() { S.hist = []; S.prevEmb = null; S.prevDets = null; S.prevLook = null; S.stops = []; S.zoom = null; S.zoomHist = []; }
+// recent: the last few full looks {t, emb, dets, look}, to compare with the one ~1 s ago as in training
+const S = { hist: [], recent: [], stops: [] };
+export function reset() { S.hist = []; S.recent = []; S.stops = []; S.zoom = null; S.zoomHist = []; }
 
 // zoomed look (from signs(), within the last 1.5 s): stop score + width now, best stop in 3 s, red, green
 function zoomFeats(t) {
@@ -484,14 +485,18 @@ export async function look(video, state) {
   const df = detFeats(ds, W, H);
   const lk = state.look ?? null;
   S.hist = S.hist.filter((h) => t - h.t <= 10); S.hist.unshift({ t, look: lk, df });
-  S.stops = [...S.stops.slice(-2), ds.filter((x) => x.cls === 'stop' && x.score >= 0.5)];
-  const recent = S.stops.flat();
-  const sameView = S.prevDets && (lk == null || S.prevLook == null || Math.abs(lk - S.prevLook) < 20);
-  const mo = sameView ? motionFeats(ds, S.prevDets, W, H) : [0, 0, 0, 0];
-  const prev = S.prevEmb || emb;
+  // stop signs seen in the last ~2 s (as in training)
+  S.stops = [...S.stops.filter((q) => t - q.t <= 2.2), { t, ds: ds.filter((x) => x.cls === 'stop' && x.score >= 0.5) }];
+  const recent = S.stops.flatMap((q) => q.ds);
+  // "1 s ago": the look closest to a second earlier; none between 0.6 and 1.4 s back counts as no change
+  const back = S.recent.filter((q) => t - q.t >= 0.6 && t - q.t <= 1.4);
+  const old = back.length ? back.reduce((a, q) => (Math.abs(t - q.t - 1) < Math.abs(t - a.t - 1) ? q : a)) : null;
+  const sameView = old && (lk == null || old.look == null || Math.abs(lk - old.look) < 20);
+  const mo = sameView ? motionFeats(ds, old.dets, W, H) : [0, 0, 0, 0];
+  const prev = old ? old.emb : emb;
   const x = [...emb, ...emb.map((v, i) => v - prev[i]), ...df, Math.max(0, ...recent.map((d) => d.score)), recent.length,
     ...scanFeats(S.hist, t), ...mo, ...(M.extra > 32 ? [...zoomFeats(t), state.limit ?? 25, Math.min(state.limit ?? 25, 20)] : []), ...navFeats(state.nav)];
-  S.prevEmb = emb; S.prevDets = ds; S.prevLook = lk;
+  S.recent = [...S.recent.filter((q) => t - q.t <= 2), { t, emb, dets: ds, look: lk }];
   const p = predictRow(x);
   // follow the directions when a turn is under 30 m away (as in training)
   const nv = x.slice(-10);
