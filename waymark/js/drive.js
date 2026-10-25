@@ -635,7 +635,13 @@ async function loopCopilot() {
           CP.secs = (performance.now() - t0) / 1000;
         } else {
           const sg = await copilot.signs(el.dcam, hfov());
-          if (sg.stop) CP.sign = { dist: sg.stop.dist, odo: S.odo || 0, at: performance.now() };
+          // a stop sign counts once two zoomed looks in a row (within 2.5 s) see it with confidence;
+          // one-off hits (red lights of cars, other red signs) are ignored
+          const now = performance.now();
+          if (sg.stop && sg.stop.score >= 0.6) {
+            if (CP.cand && now - CP.cand.at < 2500) CP.sign = { dist: sg.stop.dist, odo: S.odo || 0, at: now };
+            CP.cand = { at: now };
+          }
           if (sg.light) CP.light = { ...sg.light, at: performance.now() };
         }
         if (CP.on && last) showCopilot(last, CP.secs || 1);
@@ -646,12 +652,12 @@ async function loopCopilot() {
 }
 
 // Distance left to the last stop sign seen: estimated from its size when seen,
-// minus how far you've ridden since (GPS). Forgotten once passed or after 20 s.
+// minus how far you've ridden since (GPS). Forgotten once passed or not seen again for 6 s.
 function stopAhead() {
   const s = CP.sign;
   if (!s) return null;
   const left = s.dist - ((S.odo || 0) - s.odo);
-  if (left < -5 || performance.now() - s.at > 20000) { CP.sign = null; return null; }
+  if (left < -5 || performance.now() - s.at > 6000) { CP.sign = null; return null; } // passed it, or not seen for 6 s
   return Math.max(0, left);
 }
 
