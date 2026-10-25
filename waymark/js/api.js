@@ -41,6 +41,8 @@ export const ownerToken = (id) => mine()[id]?.token || null;
 // Uploads a finished recording. onProgress(0..1) tracks the video upload.
 // `created` ({id, token}) resumes an upload whose record already exists, and
 // onCreated hears about a new one, so a retry never makes a duplicate.
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('timed out')), ms))]);
+
 export async function uploadRoute({ meta, video, thumb, created = null }, onProgress = () => {}, onCreated = () => {}) {
   let id = created?.id, token = created?.token;
   if (!id) {
@@ -59,6 +61,14 @@ export async function uploadRoute({ meta, video, thumb, created = null }, onProg
     saveMine(m);
     await onCreated({ id, token });
   }
+
+  // Read the video into memory first. iPhone Safari can hang forever sending a
+  // video kept in browser storage straight from disk; reading it first avoids
+  // that, and a video the phone can no longer read fails clearly instead.
+  let body;
+  try { body = await withTimeout(video.arrayBuffer(), 30000); }
+  catch { throw Object.assign(new Error('This piece of footage can’t be read on this phone anymore'), { status: 410 }); }
+  if (!body.byteLength) throw Object.assign(new Error('This piece of footage is empty'), { status: 410 });
 
   await new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -79,7 +89,7 @@ export async function uploadRoute({ meta, video, thumb, created = null }, onProg
       reject(Object.assign(new Error(msg), { status: xhr.status }));
     };
     xhr.onerror = () => reject(new Error('The video upload was interrupted. Check your connection and try again.'));
-    xhr.send(video);
+    xhr.send(body);
     watch();
   });
 

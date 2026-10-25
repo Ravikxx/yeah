@@ -1,7 +1,7 @@
-import { getRoute, getDirections, videoUrl, ownerToken, deleteRoute } from './api.js?v=202610251732';
-import { $, esc, makeMap, routeLine, pinIcon, dotIcon, toast, cueGlyph, arrowGlyph, modeWord } from './ui.js?v=202610251732';
-import { stepText, compass } from './directions.js?v=202610251732';
-import { prepareTrack, buildCues, atTime, snapToTrack, distance, bearing, formatDistance, formatDuration, formatClock } from './geo.js?v=202610251732';
+import { getRoute, getDirections, videoUrl, ownerToken, deleteRoute } from './api.js?v=202610251733';
+import { $, esc, makeMap, routeLine, pinIcon, dotIcon, toast, cueGlyph, arrowGlyph, modeWord } from './ui.js?v=202610251733';
+import { stepText, compass } from './directions.js?v=202610251733';
+import { prepareTrack, buildCues, atTime, snapToTrack, distance, bearing, formatDistance, formatDuration, formatClock } from './geo.js?v=202610251733';
 
 const GMAPS_MODE = { walk: 'walking', bike: 'bicycling', drive: 'driving' };
 const OFF_ROUTE_M = 40;
