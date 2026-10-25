@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610252050';
-import * as queue from './queue.js?v=202610252050';
-import * as coverage from './coverage.js?v=202610252050';
-import { findView } from './street.js?v=202610252050';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610252050';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610252050';
-import { coverageLines } from './street.js?v=202610252050';
-import { planTrip } from './directions.js?v=202610252050';
-import * as copilot from './copilot.js?v=202610252050';
-import { searchPlaces } from './api.js?v=202610252050';
-import { snapToTrack } from './geo.js?v=202610252050';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610252050';
+import { pickMime } from './record.js?v=202610252057';
+import * as queue from './queue.js?v=202610252057';
+import * as coverage from './coverage.js?v=202610252057';
+import { findView } from './street.js?v=202610252057';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610252057';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610252057';
+import { coverageLines } from './street.js?v=202610252057';
+import { planTrip } from './directions.js?v=202610252057';
+import * as copilot from './copilot.js?v=202610252057';
+import { searchPlaces } from './api.js?v=202610252057';
+import { snapToTrack } from './geo.js?v=202610252057';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610252057';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -331,6 +331,7 @@ function onFix(pos) {
 
   if (S.odoFix && acc <= 35) S.odo = (S.odo || 0) + distance(S.odoFix, fix); // distance ridden, for the co-pilot's countdown
   if (acc <= 35) S.odoFix = fix;
+  if (CP.on) checkLimit(fix);
   const lk = lookAt(fix, gpsSpeed);
   C.last = lk.look ?? null; // the co-pilot reads this between fixes
   S.gpsSpeed = gpsSpeed;
@@ -561,8 +562,25 @@ async function newMission() {
 // do: its speed next to yours, and why it would slow down. It doesn't record
 // anything or change what gets uploaded.
 
-const CP = { on: false, voice: false, lastSaid: '', lastAt: 0, sign: null, light: null, secs: 0 };
+const CP = { on: false, voice: false, lastSaid: '', lastAt: 0, sign: null, light: null, secs: 0, signs: [], limit: null };
 const MPH = 2.23694;
+const BIKE_MAX_MPH = 20; // your bike's top speed: a 25 limit means ride about 20
+const DEFAULT_LIMIT = 25; // Ohio, streets without a sign
+
+// Speed limits from the signs read in your footage (ai/model/speed_signs.json):
+// passing one in its direction sets the limit until the next sign (or 3 km).
+function checkLimit(fix) {
+  if (!CP.signs.length || S.heading == null) return;
+  for (const s of CP.signs) {
+    const turn = Math.abs(((S.heading - s.heading + 540) % 360) - 180);
+    if (turn < 50 && distance(fix, s) < 40 && CP.limit?.mph !== s.mph) {
+      CP.limit = { mph: s.mph, odo: S.odo || 0 };
+      say(`Speed limit ${s.mph}`, false);
+    }
+  }
+  if (CP.limit && (S.odo || 0) - CP.limit.odo > 3000) CP.limit = null;
+}
+const limitNow = () => CP.limit?.mph ?? DEFAULT_LIMIT;
 
 function wireCopilot() {
   document.getElementById('copilotBtn').addEventListener('click', () => (CP.on ? stopCopilot() : startCopilot()));
@@ -585,6 +603,7 @@ async function startCopilot() {
     setCopilot({ alert: 'Co-pilot couldn’t start', detail: err.message || String(err) }); CP.on = false; return;
   }
   copilot.reset();
+  fetch('ai/model/speed_signs.json').then((r) => r.json()).then((j) => { CP.signs = j.signs || []; }).catch(() => {});
   loopCopilot();
 }
 
@@ -638,7 +657,8 @@ function stopAhead() {
 
 function showCopilot(r, secs) {
   const you = S.gpsSpeed != null ? `${Math.round(S.gpsSpeed * MPH)} mph` : '–';
-  const turn = r.turn[0] > 0.5 ? 'left' : r.turn[2] > 0.5 ? 'right' : null;
+  // turn calls only with directions: without them the model's turn guesses are no better than chance
+  const turn = !S.navNow ? null : r.turn[0] > 0.5 ? 'left' : r.turn[2] > 0.5 ? 'right' : null;
   const stopIn = stopAhead();
   const redFar = CP.light && performance.now() - CP.light.at < 4000 && CP.light.red;
   const [alert, level] = r.seen.red || redFar ? ['Red light: stop', 'stop']
@@ -650,7 +670,10 @@ function showCopilot(r, secs) {
     : r.slow >= 0.6 ? ['Slow down', 'slow']
     : turn ? [`Turn ${turn} coming`, 'info']
     : ['Clear', 'ok'];
-  setCopilot({ alert, level, ai: `${Math.round(r.speed * MPH)} mph`, you, odds: `${Math.round(r.slow * 100)}% slow-down`,
+  // never faster than the speed limit or what your bike can do
+  const lim = limitNow(), aim = Math.min(lim, BIKE_MAX_MPH);
+  const ai = Math.min(r.speed * MPH, aim);
+  setCopilot({ alert, level, ai: `${Math.round(ai)} mph`, you, odds: `Limit ${lim}${CP.limit ? '' : '?'} · aim ${aim} · ${Math.round(r.slow * 100)}% slow-down`,
     detail: `Full look every ${(secs * 2).toFixed(1)} s${r.seen.carAhead ? ' · car ahead' : ''}${r.seen.green ? ' · green light' : ''}` });
   if (level !== 'ok' && level !== 'info') say(alert.startsWith('Stop sign in') ? 'Stop sign ahead' : alert.split(':')[0]);
   else if (turn) say(`Turn ${turn}`);

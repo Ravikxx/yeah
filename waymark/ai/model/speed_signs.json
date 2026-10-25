@@ -1,0 +1,47 @@
+{
+ "note": "Speed limit signs read from Waymark footage (position and direction you were riding when you passed them).",
+ "signs": [
+  {
+   "lat": 40.504546,
+   "lng": -81.453864,
+   "heading": 351,
+   "mph": 25,
+   "seen": "zaf2mqfwr5"
+  },
+  {
+   "lat": 40.509638,
+   "lng": -81.454619,
+   "heading": 172,
+   "mph": 25,
+   "seen": "yejawnk2dv"
+  },
+  {
+   "lat": 40.504164,
+   "lng": -81.452506,
+   "heading": 174,
+   "mph": 25,
+   "seen": "76tc39iq2k"
+  },
+  {
+   "lat": 40.502589,
+   "lng": -81.438737,
+   "heading": 87,
+   "mph": 25,
+   "seen": "huvuurvv4u"
+  },
+  {
+   "lat": 40.504606,
+   "lng": -81.454196,
+   "heading": 272,
+   "mph": 35,
+   "seen": "986jxzjamx"
+  },
+  {
+   "lat": 40.504518,
+   "lng": -81.454645,
+   "heading": 92,
+   "mph": 35,
+   "seen": "exdxhj7uwf"
+  }
+ ]
+}
