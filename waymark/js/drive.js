@@ -120,11 +120,17 @@ const CAMERA = { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, he
 async function ultraWide(stream) {
   try {
     const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
-    const uw = cams.find((d) => /ultra ?wide/i.test(d.label));
+    // Back cameras only: the iPhone 17 selfie camera is an ultra-wide too ("Front Ultra Wide Camera").
+    const uw = cams.find((d) => /ultra ?wide/i.test(d.label) && /back|rear/i.test(d.label) && !/front/i.test(d.label));
     const now = stream.getVideoTracks()[0]?.getSettings().deviceId;
     if (!uw || uw.deviceId === now) return stream;
     stream.getTracks().forEach((t) => t.stop());
-    return await navigator.mediaDevices.getUserMedia({ video: { ...CAMERA, facingMode: undefined, deviceId: { exact: uw.deviceId } }, audio: false });
+    const wide = await navigator.mediaDevices.getUserMedia({ video: { ...CAMERA, facingMode: undefined, deviceId: { exact: uw.deviceId } }, audio: false });
+    if (wide.getVideoTracks()[0]?.getSettings().facingMode === 'user') { // still the selfie side: go back to the normal back camera
+      wide.getTracks().forEach((t) => t.stop());
+      return navigator.mediaDevices.getUserMedia({ video: { ...CAMERA, facingMode: { exact: 'environment' } }, audio: false });
+    }
+    return wide;
   } catch {
     return stream.active ? stream : navigator.mediaDevices.getUserMedia({ video: CAMERA, audio: false });
   }
