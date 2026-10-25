@@ -696,3 +696,28 @@ fieldset.field legend { padding: 0; margin-bottom: 6px; }
 .place-list .place-x { min-width: 40px; min-height: 40px; border: 0; border-radius: 10px; background: transparent; color: rgb(255 255 255 / .7); font-size: 1.2rem; cursor: pointer; }
 .place-list .meta { color: rgb(255 255 255 / .7); font-size: .9rem; padding: 6px 2px; }
 .place-label { margin: 6px 0 0; font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: rgb(255 255 255 / .6); }
+
+/* Drive: co-pilot */
+.chip-btn { cursor: pointer; border: 0; font: inherit; }
+.chip-btn[aria-pressed="true"] { background: #5B8EFF; color: #fff; }
+.copilot {
+  position: absolute; right: max(12px, env(safe-area-inset-right)); top: calc(max(12px, env(safe-area-inset-top)) + 200px);
+  width: min(15rem, calc(100% - 24px)); display: grid; gap: 6px; padding: 10px 12px; border-radius: 14px;
+  background: rgb(10 18 15 / .82); color: #fff; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  border: 2px solid rgb(255 255 255 / .25);
+}
+.copilot[data-level="stop"] { border-color: #FF4D3F; }
+.copilot[data-level="slow"] { border-color: #F0A63A; }
+.copilot[data-level="ok"] { border-color: #2EBD7A; }
+.cp-alert { font: 800 1.15rem/1.15 var(--f-body); }
+.copilot[data-level="stop"] .cp-alert { color: #FF8A80; }
+.copilot[data-level="slow"] .cp-alert { color: #FFC66B; }
+.cp-speeds { display: flex; gap: 14px; }
+.cp-speeds span { display: grid; }
+.cp-speeds small { font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; color: rgb(255 255 255 / .65); }
+.cp-speeds b { font: 800 1.3rem/1.1 var(--f-body); font-variant-numeric: tabular-nums; }
+.cp-odds, .cp-detail { font-size: .78rem; color: rgb(255 255 255 / .75); }
+.cp-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cp-voice { min-width: 36px; min-height: 36px; border-radius: 10px; border: 1px solid rgb(255 255 255 / .35); background: transparent; color: #fff; cursor: pointer; }
+.cp-voice[aria-pressed="true"] { background: #5B8EFF; border-color: #5B8EFF; }
+@media (max-width: 600px) { .copilot { top: auto; bottom: calc(220px + env(safe-area-inset-bottom, 0px)); } }

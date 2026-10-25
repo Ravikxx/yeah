@@ -3,17 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610251920';
-import * as queue from './queue.js?v=202610251920';
-import * as coverage from './coverage.js?v=202610251920';
-import { findView } from './street.js?v=202610251920';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610251920';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610251920';
-import { coverageLines } from './street.js?v=202610251920';
-import { planTrip } from './directions.js?v=202610251920';
-import { searchPlaces } from './api.js?v=202610251920';
-import { snapToTrack } from './geo.js?v=202610251920';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610251920';
+import { pickMime } from './record.js?v=202610252029';
+import * as queue from './queue.js?v=202610252029';
+import * as coverage from './coverage.js?v=202610252029';
+import { findView } from './street.js?v=202610252029';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610252029';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610252029';
+import { coverageLines } from './street.js?v=202610252029';
+import { planTrip } from './directions.js?v=202610252029';
+import * as copilot from './copilot.js?v=202610252029';
+import { searchPlaces } from './api.js?v=202610252029';
+import { snapToTrack } from './geo.js?v=202610252029';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610252029';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -47,6 +48,7 @@ export function enterDrive() {
 }
 
 function leaveDrive() {
+  stopCopilot();
   if (S.capturing) stopCapture(); // keep the footage: pieces are already queued
   stopCamera();
   stopGps();
@@ -78,6 +80,7 @@ function wire() {
   });
   document.getElementById('missionBtn').addEventListener('click', newMission);
   wirePlaces();
+  wireCopilot();
   for (const r of document.querySelectorAll('input[name="ridemode"]')) {
     r.addEventListener('change', () => {
       const mode = rideMode();
@@ -326,10 +329,13 @@ function onFix(pos) {
   while (S.recentFixes.length > 2 && distance(S.recentFixes[0], fix) > 25) S.recentFixes.shift();
   if (distance(S.recentFixes[0], fix) > 8) S.heading = bearing(S.recentFixes[0], fix);
 
+  const lk = lookAt(fix, gpsSpeed);
+  C.last = lk.look ?? null; // the co-pilot reads this between fixes
+  S.gpsSpeed = gpsSpeed;
   if (S.capturing && S.chunk) {
     const prev = S.chunk.track[S.chunk.track.length - 1];
     if (prev && acc <= 35) S.meters += distance(prev, fix);
-    S.chunk.track.push({ t: (now - S.chunk.t0) / 1000, lat, lng, acc, speed: gpsSpeed, heading: gpsHeading, ...lookAt(fix, gpsSpeed) });
+    S.chunk.track.push({ t: (now - S.chunk.t0) / 1000, lat, lng, acc, speed: gpsSpeed, heading: gpsHeading, ...lk });
     S.trail?.eachLayer((l) => l.addLatLng([lat, lng]));
   }
   S.lastFix = fix;
@@ -548,6 +554,92 @@ async function newMission() {
   }
 }
 
+// ---------- co-pilot ----------
+// The driving model watches the camera (on this phone) and says what it would
+// do: its speed next to yours, and why it would slow down. It doesn't record
+// anything or change what gets uploaded.
+
+const CP = { on: false, voice: false, lastSaid: '', lastAt: 0, busy: false };
+const MPH = 2.23694;
+
+function wireCopilot() {
+  document.getElementById('copilotBtn').addEventListener('click', () => (CP.on ? stopCopilot() : startCopilot()));
+  document.getElementById('copilotVoice').addEventListener('click', () => {
+    CP.voice = !CP.voice;
+    document.getElementById('copilotVoice').setAttribute('aria-pressed', String(CP.voice));
+    if (CP.voice) say('Co-pilot voice on', true); // iPhone only speaks after a tap
+  });
+}
+
+async function startCopilot() {
+  CP.on = true;
+  startCompass(); // inside the tap, so iPhone can ask for motion access
+  const btn = document.getElementById('copilotBtn'), box = document.getElementById('copilot');
+  btn.setAttribute('aria-pressed', 'true'); box.hidden = false;
+  setCopilot({ alert: 'Getting ready…', detail: 'First time: downloads about 125 MB (once). Use Wi-Fi.' });
+  try {
+    await copilot.load((f) => CP.on && setCopilot({ alert: `Downloading ${Math.round(f * 100)}%`, detail: 'About 125 MB, only the first time.' }));
+  } catch (err) {
+    setCopilot({ alert: 'Co-pilot couldn’t start', detail: err.message || String(err) }); CP.on = false; return;
+  }
+  copilot.reset();
+  loopCopilot();
+}
+
+function stopCopilot() {
+  CP.on = false;
+  document.getElementById('copilotBtn')?.setAttribute('aria-pressed', 'false');
+  const box = document.getElementById('copilot'); if (box) box.hidden = true;
+  try { speechSynthesis.cancel(); } catch { /* no speech */ }
+}
+
+async function loopCopilot() {
+  while (CP.on) {
+    const t0 = performance.now();
+    if (el.dcam?.videoWidth) {
+      try {
+        const r = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null });
+        if (CP.on) showCopilot(r, (performance.now() - t0) / 1000);
+      } catch (err) { setCopilot({ alert: 'Co-pilot hit a problem', detail: err.message || String(err) }); }
+    }
+    await new Promise((r) => setTimeout(r, Math.max(150, 1000 - (performance.now() - t0))));
+  }
+}
+
+function showCopilot(r, secs) {
+  const you = S.gpsSpeed != null ? `${Math.round(S.gpsSpeed * MPH)} mph` : '–';
+  const turn = r.turn[0] > 0.5 ? 'left' : r.turn[2] > 0.5 ? 'right' : null;
+  const [alert, level] = r.seen.red ? ['Red light: stop', 'stop']
+    : r.seen.carComing ? ['Car coming: wait', 'stop']
+    : r.seen.stop ? ['Stop sign: slow down', 'slow']
+    : r.slow >= 0.6 ? ['Slow down', 'slow']
+    : turn ? [`Turn ${turn} coming`, 'info']
+    : ['Clear', 'ok'];
+  setCopilot({ alert, level, ai: `${Math.round(r.speed * MPH)} mph`, you, odds: `${Math.round(r.slow * 100)}% slow-down`,
+    detail: `Looks every ${secs.toFixed(1)} s${r.seen.carAhead ? ' · car ahead' : ''}${r.seen.green ? ' · green light' : ''}` });
+  if (level !== 'ok' && level !== 'info') say(alert.split(':')[0]);
+  else if (turn) say(`Turn ${turn}`);
+}
+
+function setCopilot({ alert, level = 'info', ai = '–', you = '–', odds = '', detail = '' }) {
+  const box = document.getElementById('copilot');
+  box.dataset.level = level;
+  box.querySelector('.cp-alert').textContent = alert;
+  box.querySelector('.cp-ai').textContent = ai;
+  box.querySelector('.cp-you').textContent = you;
+  box.querySelector('.cp-odds').textContent = odds;
+  box.querySelector('.cp-detail').textContent = detail;
+}
+
+function say(text, force = false) {
+  if (!CP.voice || !('speechSynthesis' in window)) return;
+  const now = performance.now();
+  if (!force && text === CP.lastSaid && now - CP.lastAt < 8000) return; // don't repeat the same call
+  if (!force && now - CP.lastAt < 2500) return;
+  CP.lastSaid = text; CP.lastAt = now;
+  try { speechSynthesis.cancel(); speechSynthesis.speak(Object.assign(new SpeechSynthesisUtterance(text), { rate: 1.1 })); } catch { /* no speech */ }
+}
+
 // ---------- your own destinations ----------
 // Search for a place (or pick one you used before) and get directions there.
 // Back roads: prefer quiet streets (see directions.js). Neither is recorded as
@@ -673,6 +765,7 @@ function startMission(trip, radius) {
 
 function endMission(message) {
   M.plan = null;
+  S.navNow = null;
   if (M.layer) { M.layer.remove(); M.layer = null; }
   document.getElementById('missionSign').hidden = true;
   document.getElementById('missionEnd').hidden = true;
@@ -731,6 +824,9 @@ async function missionFix(fix) {
 }
 
 function logNav(fix, cur, plan, next, d) {
+  // what the directions say right now, in the same form as the training data (for the co-pilot)
+  S.navNow = { instruction: next ? next.title + (next.name ? ` onto ${next.name}` : '') : (d === null ? 'Off route' : ''),
+    inM: next && d !== null ? next.at - d : null, leftM: d !== null ? plan.distance - d : null };
   if (!S.capturing || !S.chunk) return;
   S.chunk.nav.push({
     t: (fix.at - S.chunk.t0) / 1000,

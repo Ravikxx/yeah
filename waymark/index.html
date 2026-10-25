@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="styles.css?v=202610251920">
+<link rel="stylesheet" href="styles.css?v=202610252029">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='9' fill='%230B6B4F'/%3E%3Cpath d='M18 42V22l12-12' fill='none' stroke='white' stroke-width='6'/%3E%3Cpath d='M36 4l2 14-14-2z' fill='white'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -159,7 +159,7 @@
       <button id="driveStart" class="btn btn-primary btn-lg" type="button">Turn on camera</button>
       <p class="fine" id="driveError" role="alert" hidden></p>
       <p class="fine">Uses about 4 MB of data per minute. Don’t touch your phone while driving; set it up before you go.</p>
-      <p class="fine">Version <span id="appVersion">202610251920</span></p>
+      <p class="fine">Version <span id="appVersion">202610252029</span></p>
       <a href="#/" class="btn btn-ghost">Cancel</a>
     </form>
   </div>
@@ -174,8 +174,18 @@
         <span class="chip chip-rec" id="dTime" hidden>0:00</span>
         <span class="chip" id="dDist" hidden>0 ft</span>
         <span class="chip" id="dUpload" data-state="wait">Nothing to upload yet</span>
+        <button type="button" class="chip chip-btn" id="copilotBtn" aria-pressed="false">Co-pilot</button>
       </div>
       <div class="hud-map hud-map-lg" id="driveMap" aria-hidden="true"></div>
+    </div>
+    <div class="copilot" id="copilot" role="status" aria-live="polite" hidden>
+      <div class="cp-alert">Getting ready…</div>
+      <div class="cp-speeds"><span><small>AI</small><b class="cp-ai">–</b></span><span><small>You</small><b class="cp-you">–</b></span></div>
+      <div class="cp-odds"></div>
+      <div class="cp-foot"><span class="cp-detail"></span>
+        <button type="button" class="cp-voice" id="copilotVoice" aria-pressed="false" aria-label="Speak the co-pilot's calls">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        </button></div>
     </div>
     <div class="loc-help" id="locHelp" role="alert" hidden></div>
     <div class="mission-sign" id="missionSign" hidden></div>
@@ -490,6 +500,6 @@
 <div id="toast" class="toast" role="status" hidden></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script type="module" src="js/app.js?v=202610251920"></script>
+<script type="module" src="js/app.js?v=202610252029"></script>
 </body>
 </html>
