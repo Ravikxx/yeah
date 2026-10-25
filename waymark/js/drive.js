@@ -92,11 +92,8 @@ async function start() {
   el.driveStart.disabled = true;
   startGps(); // ask for location right away, while the tap still counts (iPhone only prompts then)
   try {
-    S.stream = await navigator.mediaDevices.getUserMedia({
-      // 640x480 at 15 fps (never over 24): far less battery than 720p30, still enough for street view and training.
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15, max: 24 } },
-      audio: false,
-    });
+    S.stream = await navigator.mediaDevices.getUserMedia({ video: CAMERA, audio: false });
+    S.stream = await ultraWide(S.stream);
   } catch (err) {
     el.driveStart.disabled = false;
     return showError(err?.name === 'NotAllowedError'
@@ -109,6 +106,26 @@ async function start() {
   el.intro.hidden = true;
   el.hud.hidden = false;
   setupMap();
+}
+
+// 640x480 at 15 fps (never over 24): far less battery than 720p30, still enough for street view and training.
+const CAMERA = { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15, max: 24 } };
+
+// Switch to the 0.5x ultra-wide lens when the phone has one ("Back Ultra Wide
+// Camera" on iPhone): about 106° across held sideways instead of about 65°, so
+// cars coming from the side are in the picture. Camera names are only readable
+// once access is granted, so this runs after the first getUserMedia.
+async function ultraWide(stream) {
+  try {
+    const cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+    const uw = cams.find((d) => /ultra ?wide/i.test(d.label));
+    const now = stream.getVideoTracks()[0]?.getSettings().deviceId;
+    if (!uw || uw.deviceId === now) return stream;
+    stream.getTracks().forEach((t) => t.stop());
+    return await navigator.mediaDevices.getUserMedia({ video: { ...CAMERA, facingMode: undefined, deviceId: { exact: uw.deviceId } }, audio: false });
+  } catch {
+    return stream.active ? stream : navigator.mediaDevices.getUserMedia({ video: CAMERA, audio: false });
+  }
 }
 
 function showError(msg) {
