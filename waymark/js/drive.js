@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610252029';
-import * as queue from './queue.js?v=202610252029';
-import * as coverage from './coverage.js?v=202610252029';
-import { findView } from './street.js?v=202610252029';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610252029';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610252029';
-import { coverageLines } from './street.js?v=202610252029';
-import { planTrip } from './directions.js?v=202610252029';
-import * as copilot from './copilot.js?v=202610252029';
-import { searchPlaces } from './api.js?v=202610252029';
-import { snapToTrack } from './geo.js?v=202610252029';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610252029';
+import { pickMime } from './record.js?v=202610252045';
+import * as queue from './queue.js?v=202610252045';
+import * as coverage from './coverage.js?v=202610252045';
+import { findView } from './street.js?v=202610252045';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610252045';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610252045';
+import { coverageLines } from './street.js?v=202610252045';
+import { planTrip } from './directions.js?v=202610252045';
+import * as copilot from './copilot.js?v=202610252045';
+import { searchPlaces } from './api.js?v=202610252045';
+import { snapToTrack } from './geo.js?v=202610252045';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610252045';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -610,7 +610,8 @@ function showCopilot(r, secs) {
   const you = S.gpsSpeed != null ? `${Math.round(S.gpsSpeed * MPH)} mph` : '–';
   const turn = r.turn[0] > 0.5 ? 'left' : r.turn[2] > 0.5 ? 'right' : null;
   const [alert, level] = r.seen.red ? ['Red light: stop', 'stop']
-    : r.seen.carComing ? ['Car coming: wait', 'stop']
+    : r.seen.carCrossing ? ['Car crossing: wait', 'stop']
+    : r.seen.carClosing ? ['Car ahead getting close: slow down', 'slow']
     : r.seen.stop ? ['Stop sign: slow down', 'slow']
     : r.slow >= 0.6 ? ['Slow down', 'slow']
     : turn ? [`Turn ${turn} coming`, 'info']

@@ -11,7 +11,7 @@
 // then scaler + PCA on the picture part, and gradient-boosted trees.
 
 const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/';
-const FILES = { resnet: 'ai/model/resnet18.onnx', detector: 'ai/model/detector.onnx', trees: 'ai/model/model.json' };
+const FILES = { resnet: 'ai/model/resnet18.onnx', detector: 'ai/model/detector.onnx', trees: 'ai/model/model.json?v=3' }; // bump ?v= when retrained
 const CACHE = 'waymark-copilot-v2';
 const COCO = { 13: 'stop', 10: 'light', 3: 'car', 8: 'car', 6: 'car', 4: 'car' };
 const CROP = 0.72, MEAN = [0.485, 0.456, 0.406], STD = [0.229, 0.224, 0.225];
@@ -112,6 +112,10 @@ function detFeats(ds, W, H) {
     Math.max(0, ...lt.map((x) => x.rgb[0])), Math.max(0, ...lt.map((x) => x.rgb[1])), ca ? ca.score : 0, size(ca, W, H), cars.length];
 }
 
+// Your own motion taken out: riding forward, everything grows and drifts toward
+// the edges (a parked car's offset from the middle grows with its size).
+// closing = growth of the nearest car in your path; into = how far a car moved
+// toward the middle beyond what a parked car would.
 function motionFeats(now, prev, W, H) {
   const cars = (ds) => ds.filter((x) => x.cls === 'car' && x.score >= 0.5);
   const A = cars(now), B = cars(prev);
@@ -120,12 +124,16 @@ function motionFeats(now, prev, W, H) {
   let closing = 0, into = 0, moving = 0, still = 0;
   for (const a of [...A].sort((p, q) => size(q, W, H) - size(p, W, H))) {
     const sa = size(a, W, H);
-    const cand = B.filter((b) => { const r = size(b, W, H) / Math.max(sa, 1e-6); return r > 0.5 && r < 2 && Math.abs(cx(b) - cx(a)) < 0.25 && Math.abs(cy(b) - cy(a)) < 0.15; });
+    const cand = B.filter((b) => { const r = size(b, W, H) / Math.max(sa, 1e-6); return r > 0.5 && r < 2 && Math.abs(cx(b) - cx(a)) < 0.45 && Math.abs(cy(b) - cy(a)) < 0.1; });
     if (!cand.length) continue;
     const b = best(cand, (q) => -(Math.abs(cx(q) - cx(a)) + Math.abs(cy(q) - cy(a))));
-    const grow = sa - size(b, W, H), slide = Math.abs(cx(b) - 0.5) - Math.abs(cx(a) - 0.5);
-    if (Math.abs(grow) + Math.abs(cx(a) - cx(b)) > 0.02) moving++; else still++;
-    if (sa > 0.05) { closing = Math.max(closing, grow); into = Math.max(into, slide); }
+    const sb = size(b, W, H), offA = cx(a) - 0.5, offB = cx(b) - 0.5;
+    const stat = offB * sa / Math.max(sb, 1e-6);
+    if (Math.abs(offA - stat) > 0.03) moving++; else still++;
+    if (sa > 0.05) {
+      into = Math.max(into, Math.abs(stat) - Math.abs(offA));
+      if (Math.abs(offA) < 0.15) closing = Math.max(closing, sa - sb);
+    }
   }
   return [closing, into, moving, still];
 }
@@ -201,5 +209,5 @@ export async function look(video, state) {
   if (nv[6] < 30 && (nv[1] || nv[2])) p.turn = nv[1] ? [0.75, 0.25, 0] : [0, 0.25, 0.75];
   return { ...p, dets: ds, W, H,
     seen: { stop: df[0] >= 0.5 || recent.length > 0, red: df[2] >= 0.5 && df[4] > df[5] && df[4] > 0.01, green: df[2] >= 0.5 && df[5] > df[4] && df[5] > 0.01,
-      carAhead: df[7] > 0.12, carComing: mo[0] > 0.01 || mo[1] > 0.03 } };
+      carAhead: df[7] > 0.12, carCrossing: mo[1] > 0.08, carClosing: mo[0] > 0.015 } };
 }
