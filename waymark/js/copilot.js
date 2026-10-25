@@ -11,7 +11,7 @@
 //   directions: next turn, metres to it, metres to destination                        10
 // then scaler + PCA on the picture part, and gradient-boosted trees.
 
-const ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/';
+const ORT = new URL('../ai/ort/', import.meta.url).href; // onnxruntime-web 1.20.1, hosted here (multi-core mode can't load its helpers from another site)
 const FILES = { resnet: 'ai/model/resnet18.onnx', detector: 'ai/model/detector.onnx', trees: 'ai/model/model.json?v=4' }; // bump ?v= when retrained
 const CACHE = 'waymark-copilot-v2';
 const COCO = { 13: 'stop', 10: 'light', 3: 'car', 8: 'car', 6: 'car', 4: 'car' };
@@ -33,16 +33,44 @@ async function fetchCached(url, onBytes) {
   return buf.buffer;
 }
 
+// Where the models run: the GPU (WebGPU) when the browser has it; otherwise the CPU
+// on all cores (when the page is cross-origin isolated, see coi-sw.js), else one core.
+let RB = null, DB = null; // model bytes, to rebuild a session on the CPU if the GPU fails
+const EP = { resnet: 'CPU', detector: 'CPU', threads: 1 };
+const cpuName = () => (EP.threads > 1 ? `CPU×${EP.threads}` : 'CPU');
+const within = (p, ms, what) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`${what} took over ${ms / 1000} s`)), ms))]);
+let gpuOk = null;
+async function hasGpu() {
+  if (gpuOk === null) {
+    try { gpuOk = !!navigator.gpu && !!(await within(navigator.gpu.requestAdapter(), 5000, 'finding the GPU')); } catch { gpuOk = false; }
+  }
+  return gpuOk;
+}
+async function makeSession(bytes, key) {
+  if (await hasGpu()) {
+    try {
+      const s = await within(ort.InferenceSession.create(bytes, { executionProviders: ['webgpu', 'wasm'] }), 20000, 'GPU setup');
+      EP[key] = 'GPU'; return s;
+    } catch (e) { console.warn('co-pilot: GPU not available for', key, e); gpuOk = false; }
+  }
+  EP[key] = cpuName();
+  return ort.InferenceSession.create(bytes, { executionProviders: ['wasm'] });
+}
+export const backend = () => ({ ...EP });
+
 export async function load(onProgress = () => {}) {
   if (M) return;
   ort = await import(`${ORT}ort.min.mjs`);
   ort.env.wasm.wasmPaths = ORT;
-  ort.env.wasm.numThreads = 1; // GitHub Pages can't enable multi-threaded WebAssembly
+  EP.threads = self.crossOriginIsolated ? Math.max(1, Math.min(8, navigator.hardwareConcurrency || 4)) : 1;
+  try { const n = Number(localStorage.getItem('waymark.debug.threads')); if (n > 0) EP.threads = Math.min(EP.threads, n); } catch { /* no storage */ }
+  ort.env.wasm.numThreads = EP.threads;
   let got = 0; const approx = 125e6;
   const bump = (n) => { got += n; onProgress(Math.min(0.99, got / approx)); };
   const [r, d, t] = await Promise.all([fetchCached(FILES.resnet, bump), fetchCached(FILES.detector, bump), fetchCached(FILES.trees, bump)]);
-  R = await ort.InferenceSession.create(r, { executionProviders: ['wasm'] });
-  D = await ort.InferenceSession.create(d, { executionProviders: ['wasm'] });
+  RB = r; DB = d;
+  R = await makeSession(r, 'resnet');
+  D = await makeSession(d, 'detector');
   M = JSON.parse(new TextDecoder().decode(t));
   // how many inputs this model takes (older ones have no zoom / speed-limit inputs)
   let top = 0;
@@ -54,9 +82,28 @@ export async function load(onProgress = () => {}) {
 // ---------- seeing ----------
 // The converted detector crashes (instead of returning an empty list) when a picture has
 // nothing in it at all, e.g. a patch of sky. Treat that as "nothing found".
+const NOTHING = { boxes: { data: [] }, labels: { data: [] }, scores: { data: [] } };
 async function runDetector(x, shape) {
   try { return await D.run({ image: new ort.Tensor('float32', x, shape) }); }
-  catch { return { boxes: { data: [] }, labels: { data: [] }, scores: { data: [] } }; }
+  catch (e) {
+    if (EP.detector !== 'GPU') return NOTHING;
+    // On the GPU: try the CPU. If the CPU can do it, the GPU was the problem: stay on the CPU.
+    try {
+      const cpu = await ort.InferenceSession.create(DB, { executionProviders: ['wasm'] });
+      const out = await cpu.run({ image: new ort.Tensor('float32', x, shape) });
+      console.warn('co-pilot: detector moved to the CPU', e); D = cpu; EP.detector = cpuName();
+      return out;
+    } catch { return NOTHING; } // a picture with nothing in it, on either
+  }
+}
+async function runResnet(feeds) {
+  try { return await R.run(feeds); }
+  catch (e) {
+    if (EP.resnet !== 'GPU') throw e;
+    console.warn('co-pilot: picture summary moved to the CPU', e);
+    R = await ort.InferenceSession.create(RB, { executionProviders: ['wasm'] }); EP.resnet = cpuName();
+    return R.run(feeds);
+  }
 }
 const cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
 
@@ -75,7 +122,7 @@ async function embed(video, W, H) {
   g.drawImage(video, 0, 0, W, ch, -(rw - 224) / 2, -(rh - 224) / 2, rw, rh);
   const p = g.getImageData(0, 0, 224, 224).data, n = 224 * 224, x = new Float32Array(3 * n);
   for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) x[k * n + i] = (p[i * 4 + k] / 255 - MEAN[k]) / STD[k];
-  const out = await R.run({ image: new ort.Tensor('float32', x, [1, 3, 224, 224]) });
+  const out = await runResnet({ image: new ort.Tensor('float32', x, [1, 3, 224, 224]) });
   return Array.from(out.emb.data);
 }
 

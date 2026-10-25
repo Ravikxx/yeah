@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610252207';
-import * as queue from './queue.js?v=202610252207';
-import * as coverage from './coverage.js?v=202610252207';
-import { findView } from './street.js?v=202610252207';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610252207';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610252207';
-import { coverageLines } from './street.js?v=202610252207';
-import { planTrip } from './directions.js?v=202610252207';
-import * as copilot from './copilot.js?v=202610252207';
-import { searchPlaces } from './api.js?v=202610252207';
-import { snapToTrack } from './geo.js?v=202610252207';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610252207';
+import { pickMime } from './record.js?v=202610252306';
+import * as queue from './queue.js?v=202610252306';
+import * as coverage from './coverage.js?v=202610252306';
+import { findView } from './street.js?v=202610252306';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610252306';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610252306';
+import { coverageLines } from './street.js?v=202610252306';
+import { planTrip } from './directions.js?v=202610252306';
+import * as copilot from './copilot.js?v=202610252306';
+import { searchPlaces } from './api.js?v=202610252306';
+import { snapToTrack } from './geo.js?v=202610252306';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610252306';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -695,7 +695,7 @@ function showCopilot(r, secs) {
   const lim = limitNow(), aim = Math.min(lim, BIKE_MAX_MPH);
   const ai = Math.min(r.speed * MPH, aim);
   setCopilot({ alert, level, ai: `${Math.round(ai)} mph`, you, odds: `Limit ${lim}${CP.limit ? '' : '?'} · aim ${aim} · ${Math.round(r.slow * 100)}% slow-down`,
-    detail: `Model look takes ${secs.toFixed(1)} s${r.seen.carAhead ? ' · car ahead' : ''}${r.seen.green ? ' · green light' : ''}` });
+    detail: `Model look ${secs.toFixed(1)} s on ${copilot.backend().detector}${r.seen.carAhead ? ' · car ahead' : ''}${r.seen.green ? ' · green light' : ''}` });
   if (level !== 'ok' && level !== 'info') say(alert.startsWith('Stop sign in') ? 'Stop sign ahead' : alert.split(':')[0]);
   else if (turn) say(`Turn ${turn}`);
 }
