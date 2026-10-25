@@ -1,7 +1,7 @@
 // Turn-by-turn from the router (OSRM responses via the Waymark Worker).
 
-import { getDirections } from './api.js?v=202610251851';
-import { formatDistance } from './geo.js?v=202610251851';
+import { getDirections, getRoadSpeeds } from './api.js?v=202610251920';
+import { formatDistance } from './geo.js?v=202610251920';
 
 const COMPASS = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'];
 export const compass = (deg) => COMPASS[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
@@ -67,32 +67,92 @@ function flatten(r, mode, from, to) {
 }
 
 // ---------- back roads ----------
-// Big roads here are numbered routes (US/state routes carry a ref like "SR 800")
-// and anything named like a highway. To find quieter ways, ask for the router's
-// alternatives plus routes forced through points to either side of the straight
-// line, then keep the one with the least big-road distance that isn't much longer.
+// A big road is one where cars are expected to go fast: the router's car speed
+// estimate along the route (35-50 mph roads come out around 30-45; residential
+// streets around 15). Numbered US/state routes count too, as a fallback.
+// To find quieter ways, ask for the router's alternatives plus routes forced
+// through points to either side of the straight line, then keep the one with
+// the least big-road riding that isn't far longer.
 const BIG_NAME = /highway|expressway|freeway|parkway|bypass|pike|route \d/i;
 export const isBigRoad = (s) => Boolean(s.ref) || BIG_NAME.test(s.name || '');
+const MID_MPH = 30, FAST_MPH = 38;
 
-function bigMeters(trip) {
-  return trip.steps.reduce((m, s) => m + (isBigRoad(s) ? s.distance : 0), 0);
+function sample(latlngs, n = 85) {
+  let total = 0; const cum = [0];
+  for (let i = 1; i < latlngs.length; i++) {
+    const [a, b] = [latlngs[i - 1], latlngs[i]];
+    total += Math.hypot((b[0] - a[0]) * 111320, (b[1] - a[1]) * 111320 * Math.cos(a[0] * Math.PI / 180)); cum.push(total);
+  }
+  const step = Math.max(40, total / (n - 1)), out = [latlngs[0]];
+  for (let i = 1, next = step; i < latlngs.length; i++) if (cum[i] >= next) { out.push(latlngs[i]); next = cum[i] + step; }
+  if (out[out.length - 1] !== latlngs[latlngs.length - 1]) out.push(latlngs[latlngs.length - 1]);
+  return out.slice(0, 85);
+}
+
+// Metres on fast roads (mph >= FAST), on medium ones, the worst speed seen,
+// and where the longest run of fast-ish road is (to try detouring around it).
+async function roadLoad(trip) {
+  try {
+    const pts = sample(trip.latlngs);
+    const st = await getRoadSpeeds(pts);
+    if (st.length) {
+      let run = null, cur = null;
+      st.forEach((x, i) => {
+        if (x.mph >= MID_MPH) {
+          if (!cur) cur = { i0: i, i1: i, m: 0 };
+          cur.i1 = i; cur.m += x.m;
+          if (!run || cur.m > run.m) run = { ...cur };
+        } else cur = null;
+      });
+      const worst = run && { a: pts[run.i0], b: pts[run.i1 + 1] || pts[run.i1], m: run.m };
+      return { fast: st.filter((x) => x.mph >= FAST_MPH).reduce((m, x) => m + x.m, 0),
+               mid: st.filter((x) => x.mph >= MID_MPH && x.mph < FAST_MPH).reduce((m, x) => m + x.m, 0),
+               top: Math.max(...st.map((x) => x.top)), worst };
+    }
+  } catch { /* fall back to route numbers */ }
+  return { fast: trip.steps.reduce((m, s) => m + (isBigRoad(s) ? s.distance : 0), 0), mid: 0, top: null, worst: null };
+}
+
+const RAD = Math.PI / 180, EARTH = 6371000;
+// Points `m` metres to either side of the line a->b, at its middle.
+function besides(a, b, ms) {
+  const dy = (b[0] - a[0]) * RAD * EARTH, dx = (b[1] - a[1]) * RAD * EARTH * Math.cos(a[0] * RAD);
+  const len = Math.hypot(dx, dy) || 1, mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  return ms.flatMap((m) => [-1, 1].map((sg) => ({
+    lat: mid[0] + sg * (dx / len) * m / (EARTH * RAD), lng: mid[1] - sg * (dy / len) * m / (EARTH * RAD * Math.cos(mid[0] * RAD)) })));
 }
 
 async function planBackRoads(mode, from, to, bearing) {
-  const R = 6371000, rad = Math.PI / 180;
-  const dy = (to.lat - from.lat) * rad * R, dx = (to.lng - from.lng) * rad * R * Math.cos(from.lat * rad);
-  const len = Math.hypot(dx, dy) || 1;
-  const mid = { lat: (from.lat + to.lat) / 2, lng: (from.lng + to.lng) / 2 };
-  const side = (m) => ({ lat: mid.lat + (dx / len) * m / (R * rad), lng: mid.lng - (dy / len) * m / (R * rad * Math.cos(mid.lat * rad)) });
-  const offsets = len < 300 ? [] : [-0.5, -0.25, 0.25, 0.5].map((f) => Math.max(150, Math.min(600, len * Math.abs(f))) * Math.sign(f));
-  const asks = [getDirections(mode, from, to, bearing, { alternatives: true }).then((d) => (d.routes || []).map((r) => flatten(r, mode, from, to)))]
-    .concat(offsets.map((o) => getDirections(mode, from, to, bearing, { via: side(o) }).then((d) => (d.routes || []).slice(0, 1).map((r) => flatten(r, mode, from, to)))));
-  const trips = (await Promise.allSettled(asks)).flatMap((x) => (x.status === 'fulfilled' ? x.value : []));
-  if (!trips.length) throw new Error('No route found between those points.');
-  const shortest = Math.min(...trips.map((t) => t.distance));
-  const ok = trips.filter((t) => t.distance <= shortest * 1.6 && !t.steps.some((s) => s.maneuver?.modifier === 'uturn'));
-  const pool = ok.length ? ok : trips;
-  const best = pool.reduce((a, t) => (bigMeters(t) * 4 + t.distance < bigMeters(a) * 4 + a.distance ? t : a));
-  best.bigRoadMeters = Math.round(bigMeters(best));
-  return best;
+  const ask = (via) => getDirections(mode, from, to, bearing, via ? { via } : { alternatives: true })
+    .then((d) => (d.routes || []).slice(0, via ? 1 : 3).map((r) => flatten(r, mode, from, to))).catch(() => []);
+  const straight = Math.hypot((to.lat - from.lat) * RAD * EARTH, (to.lng - from.lng) * RAD * EARTH * Math.cos(from.lat * RAD));
+  // first try: the router's own alternatives, plus routes through points on
+  // either side of the straight line at 30/50/70% of the way
+  const at = (f) => [from.lat + (to.lat - from.lat) * f, from.lng + (to.lng - from.lng) * f];
+  const side = straight < 250 ? [] : [[0.15, 0.45], [0.35, 0.65], [0.55, 0.85]]
+    .flatMap(([f0, f1]) => besides(at(f0), at(f1), [Math.max(120, Math.min(900, straight * 0.25)), Math.max(150, Math.min(1200, straight * 0.5))]));
+  const first = await Promise.all([ask(null), ...side.map(ask)]);
+  const all = first.flat();
+  if (!all.length) throw new Error('No route found between those points.');
+  const shortest = Math.min(...all.map((t) => t.distance));
+  const okLen = (t) => t.distance <= shortest * 1.8 && !t.steps.some((s) => s.maneuver?.modifier === 'uturn');
+  const score = (t, l) => t.distance + 6 * l.fast + 3 * l.mid;
+  const scored = [];
+  const add = async (trips) => {
+    const fresh = trips.filter(okLen).filter((t) => !scored.some((s) => Math.abs(s.t.distance - t.distance) < 15));
+    const loads = await Promise.all(fresh.map(roadLoad));
+    fresh.forEach((t, i) => scored.push({ t, l: loads[i] }));
+  };
+  await add(all);
+  if (!scored.length) await add(all.map((t) => ({ ...t }))); // nothing short enough: take what there is
+  // Twice: detour around the longest fast stretch of the best route so far.
+  for (let round = 0; round < 2; round++) {
+    const best = scored.reduce((a, s) => (score(s.t, s.l) < score(a.t, a.l) ? s : a));
+    if (!best.l.worst || best.l.worst.m < 100) break;
+    await add((await Promise.all(besides(best.l.worst.a, best.l.worst.b, [250, 500]).map(ask))).flat());
+  }
+  const best = scored.length ? scored.reduce((a, s) => (score(s.t, s.l) < score(a.t, a.l) ? s : a)) : { t: all[0], l: { fast: 0, mid: 0 } };
+  best.t.bigRoadMeters = Math.round(best.l.fast + best.l.mid);
+  best.t.topCarMph = best.l.top;
+  return best.t;
 }

@@ -24,6 +24,9 @@ const ll = (p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
 export const getDirections = (mode, from, to, bearing = null, { via = null, alternatives = false } = {}) =>
   request(`/api/directions?mode=${mode}&from=${ll(from)}&to=${ll(to)}${bearing == null ? '' : `&bearing=${Math.round(bearing)}`}` +
     `${via ? `&via=${ll(via)}` : ''}${alternatives ? '&alternatives=1' : ''}`);
+// Car speed estimates (mph) for stretches between consecutive points; tells big roads apart.
+export const getRoadSpeeds = (pts) =>
+  request(`/api/roadspeeds?coords=${pts.map((p) => `${p[1].toFixed(5)},${p[0].toFixed(5)}`).join(';')}`).then((b) => b.stretches || []);
 export const getCoverage = ([w, s, e, n], ids = []) =>
   request(`/api/coverage?bbox=${[w, s, e, n].map((v) => v.toFixed(5)).join(',')}${ids.length ? `&ids=${ids.join(',')}` : ''}`)
     .then((b) => b.segments);

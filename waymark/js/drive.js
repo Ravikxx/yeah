@@ -3,17 +3,17 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610251851';
-import * as queue from './queue.js?v=202610251851';
-import * as coverage from './coverage.js?v=202610251851';
-import { findView } from './street.js?v=202610251851';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610251851';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610251851';
-import { coverageLines } from './street.js?v=202610251851';
-import { planTrip } from './directions.js?v=202610251851';
-import { searchPlaces } from './api.js?v=202610251851';
-import { snapToTrack } from './geo.js?v=202610251851';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610251851';
+import { pickMime } from './record.js?v=202610251920';
+import * as queue from './queue.js?v=202610251920';
+import * as coverage from './coverage.js?v=202610251920';
+import { findView } from './street.js?v=202610251920';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610251920';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610251920';
+import { coverageLines } from './street.js?v=202610251920';
+import { planTrip } from './directions.js?v=202610251920';
+import { searchPlaces } from './api.js?v=202610251920';
+import { snapToTrack } from './geo.js?v=202610251920';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610251920';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -617,10 +617,13 @@ async function goTo(place) {
   const saved = store.get(PLACES_KEY, []).filter((p) => !(Math.abs(p.lat - place.lat) < 1e-5 && Math.abs(p.lng - place.lng) < 1e-5));
   store.set(PLACES_KEY, [{ name: place.name, address: place.address || '', lat: place.lat, lng: place.lng }, ...saved].slice(0, 12));
   document.getElementById('placeSheet').hidden = true;
+  if (backRoads()) toast('Finding a way on back roads…');
   try {
     const trip = await planTrip(S.mode, fix, { lat: place.lat, lng: place.lng }, S.heading, { backRoads: backRoads() });
     startMission(trip, 0);
-    toast(`Directions to ${place.name}${backRoads() ? ' on back roads' : ''}. ${formatDistance(trip.distance)}.`);
+    const big = trip.bigRoadMeters;
+    toast(`Directions to ${place.name}, ${formatDistance(trip.distance)}.` + (backRoads() && big != null
+      ? (big < 50 ? ' All back roads.' : ` ${formatDistance(big)} on bigger roads; there’s no quieter way.`) : ''));
   } catch (err) {
     toast(err.message || 'Couldn’t get directions there.');
   }
