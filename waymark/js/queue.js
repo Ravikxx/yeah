@@ -3,7 +3,7 @@
 // signal or a closed tab doesn't lose footage. Falls back to memory when
 // IndexedDB isn't available (some private windows).
 
-import { uploadRoute } from './api.js?v=202610251733';
+import { uploadRoute } from './api.js?v=202610251739';
 
 const DB_NAME = 'waymark';
 const STORE = 'uploads';
@@ -36,7 +36,15 @@ async function tx(mode, fn) {
   });
 }
 
+// iPhone Safari can lose video saved in IndexedDB as a Blob (it keeps it as a
+// separate file that can disappear), so pieces are saved as raw bytes instead.
+const bodyOf = (item) => item.blob || new Blob([item.bytes], { type: item.type });
+
 export async function enqueue(item) {
+  if (item.blob) {
+    const { blob, ...rest } = item;
+    item = { ...rest, bytes: await blob.arrayBuffer(), type: blob.type, size: blob.size };
+  }
   const d = await db();
   if (!d) { const key = memKey++; memory.set(key, { ...item, key, tries: 0 }); notify(); kick(); return key; }
   const key = await tx('readwrite', (s) => s.add({ ...item, tries: 0 }));
@@ -97,13 +105,13 @@ async function run() {
       notify();
       try {
         const id = await uploadRoute(
-          { meta: item.meta, video: item.blob, created: item.created },
+          { meta: item.meta, video: bodyOf(item), created: item.created },
           (p) => { status.progress = p; listeners.forEach((fn) => fn(status)); },
           async (created) => { item.created = created; await update(item); },
         );
         await drop(item.key);
         status.uploaded++;
-        status.bytesUploaded += item.blob.size;
+        status.bytesUploaded += item.size ?? item.blob?.size ?? 0;
         status.lastError = null;
         doneListeners.forEach((fn) => fn({ id, meta: item.meta }));
       } catch (err) {
