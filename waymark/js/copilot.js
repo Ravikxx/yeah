@@ -152,7 +152,7 @@ function gray(px, W, H) { // half size, grayscale
 // How box b moved from image A to image B (half-size pixels): sideways shift
 // dx and growth `scale`, found by trying shifts and sizes until the car's patch
 // lines up best.
-function matchBox(A, B, b, maxS, parked = null) {
+function matchBox(A, B, b, maxS, parked = null, { cx0 = 0, scale = true } = {}) {
   const [x0, y0, x1, y1] = [Math.max(0, b[0] >> 1), Math.max(0, b[1] >> 1), Math.min(A.w - 1, b[2] >> 1), Math.min(A.h - 1, b[3] >> 1)];
   const pts = [];
   const step = Math.max(1, Math.floor((x1 - x0) * (y1 - y0) / 1200)); // ~1200 sample pixels at most
@@ -171,11 +171,13 @@ function matchBox(A, B, b, maxS, parked = null) {
   const sx = x1 - x0 < 40 ? 1 : 2; // finer steps for small (far) cars
   const my = Math.max(4, Math.round((y1 - y0) * 0.15)); // a near car you ride up to also slides down
   // coarse: shift and size together (a near car can grow ~30% in 0.2 s), then fine around the best
-  for (let sc = 0.85; sc <= 1.4501; sc += 0.05) for (let dx = -maxS; dx <= maxS; dx += sx * 2) for (let dy = -my; dy <= my; dy += 2) {
+  const [s0, s1] = scale ? [0.85, 1.4501] : [1, 1.0001];
+  for (let sc = s0; sc <= s1; sc += 0.05) for (let dx = cx0 - maxS; dx <= cx0 + maxS; dx += sx * 2) for (let dy = -my; dy <= my; dy += 2) {
     const e = err(dx, dy, sc); if (e < best.e) best = { dx, dy, scale: sc, e };
   }
   const c = { ...best };
-  for (let sc = c.scale - 0.04; sc <= c.scale + 0.0401; sc += 0.01) for (let dx = c.dx - 3; dx <= c.dx + 3; dx++) for (let dy = c.dy - 2; dy <= c.dy + 2; dy++) {
+  const ds_ = scale ? 0.04 : 0;
+  for (let sc = c.scale - ds_; sc <= c.scale + ds_ + 0.0001; sc += 0.01) for (let dx = c.dx - 3; dx <= c.dx + 3; dx++) for (let dy = c.dy - 2; dy <= c.dy + 2; dy++) {
     const e = err(dx, dy, sc); if (e < best.e) best = { dx, dy, scale: sc, e };
   }
   // How well "it's parked" fits: where a parked car would be, given your speed (a little slack)
@@ -228,6 +230,81 @@ function carMotion(A, B, ds, W, H, secs, egoMps = 0, hfovDeg = 50) {
   }
   return out;
 }
+// ---------- car tracker ----------
+// Cars found by the detector (about once a second) are followed frame to frame
+// (several times a second) by matching their patch. For every step, the part of
+// a car's sideways movement that a parked car wouldn't make (given your speed
+// and its distance) is added up; a car counts as moving only after it has gone
+// 1.5+ m on its own, mostly one way, within about a second. Matching noise
+// jitters back and forth and cancels out; parked cars never add up.
+export function makeTracker() {
+  let tracks = [], prev = null, prevT = 0, nextId = 1;
+  const iou = (a, b) => {
+    const x = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])), y = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+    const u = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - x * y;
+    return u > 0 ? (x * y) / u : 0;
+  };
+  // whole-scene shift (you turning, bumps): upper part of the picture minus the cars, no size change
+  function sceneShift(A, B, W, H) {
+    return matchBox(A, B, [0, Math.round(H * 0.08), W, Math.round(H * 0.6)], 14, null, { scale: false });
+  }
+  return {
+    addDetections(ds, g, W, H, t) {
+      for (const d of ds) {
+        if (d.cls !== 'car' || d.score < 0.6) continue;
+        const b = d.box;
+        if (b[3] - b[1] < 16 || b[0] < 4 || b[2] > W - 4) continue; // too small, or cut off at the edge
+        const tr = tracks.find((q) => iou(q.box, b) > 0.3);
+        if (tr) { tr.box = b.slice(); tr.seen = t; } else tracks.push({ id: nextId++, box: b.slice(), seen: t, hist: [], v: 0 });
+      }
+      tracks = tracks.filter((q) => t - q.seen < 2.5 && !q.lost);
+    },
+    update(g, t, egoMps, hfovDeg, W, H) {
+      if (!prev) { prev = g; prevT = t; return []; }
+      const dt = Math.max(0.05, t - prevT);
+      const f = (W / 2) / Math.tan(hfovDeg * Math.PI / 360);
+      const bg = sceneShift(prev, g, W, H);
+      const out = [];
+      for (const tr of tracks) {
+        const b = tr.box, hPx = b[3] - b[1];
+        const dist = Math.max(3, f * CAR_H / hPx), offPx = (b[0] + b[2]) / 2 - W / 2;
+        const pScale = dist / Math.max(1, dist - egoMps * dt);
+        const parkedDx = bg.dx + (offPx * (pScale - 1)) / 2; // half-size px
+        const predDx = Math.round(parkedDx + tr.v * dt / 2); // where it'd be if it kept its own speed
+        const m = matchBox(prev, g, b, Math.max(6, Math.round(hPx * 0.25)), null, { cx0: predDx });
+        if (!(m.e < 40)) { tr.lost = true; continue; }
+        const ownPx = (m.dx - parkedDx) * 2; // full-size px of sideways movement a parked car wouldn't make
+        const ownM = ownPx * dist / f;
+        tr.hist.push({ t, ownM, dist });
+        tr.hist = tr.hist.filter((h) => t - h.t <= 1.2);
+        tr.v = ownPx / dt; // px/s, for predicting the next step
+        // move the box with the car
+        const cx = (b[0] + b[2]) / 2 + m.dx * 2, cy = (b[1] + b[3]) / 2 + m.dy * 2, w = (b[2] - b[0]) * m.scale, h = hPx * m.scale;
+        tr.box = [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2];
+        if (tr.box[0] < 2 || tr.box[2] > W - 2) { tr.lost = true; continue; } // left the picture
+        // moving: 1.5+ m on its own within ~1 s, mostly in one direction
+        const H_ = tr.hist, span = H_.length > 1 ? H_[H_.length - 1].t - H_[0].t + dt : dt;
+        const sum = H_.reduce((a, h) => a + h.ownM, 0), sameWay = H_.filter((h) => Math.sign(h.ownM) === Math.sign(sum)).length / H_.length;
+        const moving = H_.length >= 4 && Math.abs(sum) > 1.5 && sameWay >= 0.75;
+        const vSide = sum / span; // m/s, + = moving right
+        const side = offPx * dist / f;
+        const inLane = Math.abs(side) < LANE;
+        const intoLane = !inLane && Math.sign(vSide) === -Math.sign(side) && (Math.abs(side) - LANE) / Math.max(0.1, Math.abs(vSide)) < 3;
+        // getting closer in your lane: distance falling faster than it would for a parked car
+        const d0 = H_[0].dist, closing = H_.length >= 4 ? (d0 - dist) / span : 0; // m/s
+        const ownAlong = closing - egoMps; // + = coming toward you, - = going away
+        const movingAlong = H_.length >= 4 && Math.abs(ownAlong) > Math.max(3, 0.5 * egoMps);
+        out.push({ id: tr.id, box: tr.box, dist, side, vSide, moving: moving || movingAlong,
+          crossing: moving && dist < 40 && (inLane || intoLane),
+          closingIn: movingAlong && inLane && closing > 1 && dist / closing < 4 });
+      }
+      tracks = tracks.filter((q) => !q.lost);
+      prev = g; prevT = t;
+      return out;
+    },
+  };
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- features (mirror see.py) ----------
@@ -354,4 +431,4 @@ export async function look(video, state) {
       // only moving cars (0.2 s check, your own motion taken out); parked cars never count
       carAhead: df[7] > 0.12, carCrossing: cars.some((c) => c.crossing), carClosing: cars.some((c) => c.closingIn) }, cars };
 }
-export const _test = { gray, matchBox, carMotion, detect: (img) => detect(img) };
+export const _test = { gray, matchBox, carMotion, makeTracker, detect: (img) => detect(img) };
