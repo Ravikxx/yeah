@@ -7,7 +7,7 @@ const MINE_KEY = 'waymark.mine.v1';
 async function request(path, opts = {}) {
   let res;
   try {
-    res = await fetch(API_BASE + path, opts);
+    res = await fetch(API_BASE + path, { signal: AbortSignal.timeout?.(30000), ...opts }); // never wait forever
   } catch {
     throw new Error('Can’t reach the Waymark server. Check your connection and try again.');
   }
@@ -65,7 +65,13 @@ export async function uploadRoute({ meta, video, thumb, created = null }, onProg
     xhr.open('PUT', `${API_BASE}/api/routes/${id}/video`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.setRequestHeader('Content-Type', video.type.split(';')[0]);
-    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    // A connection can hang without ever failing (network switch, screen lock).
+    // If no bytes move for 45 s, give up on this try; the queue retries it.
+    let stall;
+    const watch = () => { clearTimeout(stall); stall = setTimeout(() => xhr.abort(), 45000); };
+    xhr.upload.onprogress = (e) => { watch(); if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    xhr.onloadend = () => clearTimeout(stall);
+    xhr.onabort = () => reject(new Error('The upload stalled. Trying again…'));
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) return resolve();
       let msg = `Video upload failed (${xhr.status})`;
@@ -74,6 +80,7 @@ export async function uploadRoute({ meta, video, thumb, created = null }, onProg
     };
     xhr.onerror = () => reject(new Error('The video upload was interrupted. Check your connection and try again.'));
     xhr.send(video);
+    watch();
   });
 
   if (thumb) {
