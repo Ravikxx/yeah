@@ -44,6 +44,10 @@ export async function load(onProgress = () => {}) {
   R = await ort.InferenceSession.create(r, { executionProviders: ['wasm'] });
   D = await ort.InferenceSession.create(d, { executionProviders: ['wasm'] });
   M = JSON.parse(new TextDecoder().decode(t));
+  // how many inputs this model takes (older ones have no zoom / speed-limit inputs)
+  let top = 0;
+  for (const k of ['speed', 'slow', 'turn']) for (const it of M[k].trees) for (const t of it) for (const n of t) if (!n[6]) top = Math.max(top, n[0]);
+  M.extra = M.img + top + 1 - M.pca.length; // the inputs after the picture summary
   onProgress(1);
 }
 
@@ -339,7 +343,7 @@ export async function look(video, state) {
   const mo = sameView ? motionFeats(ds, S.prevDets, W, H) : [0, 0, 0, 0];
   const prev = S.prevEmb || emb;
   const x = [...emb, ...emb.map((v, i) => v - prev[i]), ...df, Math.max(0, ...recent.map((d) => d.score)), recent.length,
-    ...scanFeats(S.hist, t), ...mo, ...zoomFeats(t), state.limit ?? 25, Math.min(state.limit ?? 25, 20), ...navFeats(state.nav)];
+    ...scanFeats(S.hist, t), ...mo, ...(M.extra > 32 ? [...zoomFeats(t), state.limit ?? 25, Math.min(state.limit ?? 25, 20)] : []), ...navFeats(state.nav)];
   S.prevEmb = emb; S.prevDets = ds; S.prevLook = lk;
   const p = predictRow(x);
   // follow the directions when a turn is under 30 m away (as in training)
