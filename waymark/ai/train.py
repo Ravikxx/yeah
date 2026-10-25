@@ -52,8 +52,10 @@ for rid, rs in by.items():
         # 3 s ahead
         fut = [x for x in rs[k + 1:k + 4]]
         sp = f(r['speed_mps'])
-        s2 = f(fut[1]['speed_mps']) if len(fut) > 1 else sp
-        stop_soon = int(sp > 2.0 and s2 < 0.7 * sp)
+        # Slowing for something ahead: within the next 8 s, speed drops below
+        # 60% of now (or to a stop). Stop signs are usually seen 4-8 s early.
+        ahead8 = [f(x['speed_mps']) for x in rs[k + 1:k + 9]]
+        stop_soon = int(sp > 2.0 and bool(ahead8) and min(ahead8) < max(1.0, 0.6 * sp))
         h0 = f(r['heading_deg'], None) if r['heading_deg'] else None
         h1 = f(fut[-1]['heading_deg'], None) if fut and fut[-1]['heading_deg'] else None
         recent = [x for q in rs[max(0, k - 2):k + 1] for x in dets.get(q['frame'], []) if x['cls'] == 'stop_sign' and x['score'] >= 0.5 and (x['box'][1] + x['box'][3]) / 2 < 1280 * 0.75]
@@ -64,7 +66,7 @@ for rid, rs in by.items():
         rec.append(rid); lat.append(f(r['lat'])); lng.append(f(r['lng'])); ordered.append(r)
 X = np.array(X, np.float32); Y_speed = np.array(Y_speed); Y_stop = np.array(Y_stop); Y_turn = np.array(Y_turn)
 rec = np.array(rec); lng = np.array(lng)
-print(f'{len(X)} frames, {len(by)} recordings | slowing-down positives {Y_stop.sum()} | turns L/S/R {np.bincount(Y_turn, minlength=3)}')
+print(f'{len(X)} frames, {len(by)} recordings | slowing-within-8s positives {Y_stop.sum()} | turns L/S/R {np.bincount(Y_turn, minlength=3)}')
 
 def run(name, test):
     train = ~test
@@ -84,6 +86,11 @@ def run(name, test):
         out['stop_soon_AUC'] = round(roc_auc_score(Y_stop[test], clf.predict_proba(Xte)[:, 1]), 3)
         out['stop_soon_AUC_baseline'] = 0.5
         out['stop_soon_positives_in_test'] = int(Y_stop[test].sum())
+        prob = clf.predict_proba(Xte)[:, 1]
+        sn = np.array([r.get('_stop_sign_seen', False) for r in ordered])[test]
+        if sn.any():
+            out['model_slowdown_prob_sign_seen'] = round(float(prob[sn].mean()), 2)
+            out['model_slowdown_prob_no_sign'] = round(float(prob[~sn].mean()), 2)
     clf = HistGradientBoostingClassifier(**GB, class_weight='balanced').fit(Xtr, Y_turn[train])
     out['turn_balanced_acc'] = round(balanced_accuracy_score(Y_turn[test], clf.predict(Xte)), 3)
     out['turn_balanced_acc_baseline'] = round(1 / 3, 3)
