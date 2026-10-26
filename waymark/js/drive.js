@@ -3,18 +3,19 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261927';
-import * as queue from './queue.js?v=202610261927';
-import * as coverage from './coverage.js?v=202610261927';
-import { findView } from './street.js?v=202610261927';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261927';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261927';
-import { coverageLines } from './street.js?v=202610261927';
-import { planTrip } from './directions.js?v=202610261927';
-import * as copilot from './copilot.js?v=202610261927';
-import { searchPlaces } from './api.js?v=202610261927';
-import { snapToTrack } from './geo.js?v=202610261927';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261927';
+import { pickMime } from './record.js?v=202610261952';
+import * as queue from './queue.js?v=202610261952';
+import * as coverage from './coverage.js?v=202610261952';
+import { findView } from './street.js?v=202610261952';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261952';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261952';
+import { coverageLines } from './street.js?v=202610261952';
+import { planTrip } from './directions.js?v=202610261952';
+import * as copilot from './copilot.js?v=202610261952';
+import { searchPlaces } from './api.js?v=202610261952';
+import { snapToTrack } from './geo.js?v=202610261952';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261952';
+import { turnRateFrom, smoothRate, planBand } from './band.js?v=202610261952';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -272,19 +273,7 @@ function onOrient(e) {
 // How fast you're actually turning (degrees a second, + = right), from the compass over the last
 // second, only while moving (2+ m/s): a quick handlebar wiggle or looking around while stopped
 // doesn't count. null when unknown.
-function turnRate() {
-  const h = C.hist, v = S.gpsSpeed ?? 0, now = performance.now();
-  // slow turns count too (a bike at an intersection is often under 4 mph), and it reacts within ~0.5 s
-  if (!h || h.length < 6 || v < 0.8 || now - h[h.length - 1].t > 400) return null;
-  const last = h[h.length - 1], old = h.find((q) => now - q.t <= 800) || h[0], dt = (last.t - old.t) / 1000;
-  if (dt < 0.4) return null;
-  const d = (a, b) => ((b.h - a.h + 540) % 360) - 180;
-  const mid = h.find((q) => q.t >= old.t + (last.t - old.t) / 2) || last;
-  const r = d(old, last) / dt, r1 = d(old, mid) / (dt / 2), r2 = d(mid, last) / (dt / 2);
-  // a real turn keeps going the same way; a wobble on a bumpy road swings back and forth
-  if (r1 * r2 <= 0 || Math.min(Math.abs(r1), Math.abs(r2)) < 0.5 * Math.abs(r)) return null;
-  return r;
-}
+function turnRate() { return turnRateFrom(C.hist, S.gpsSpeed ?? 0, performance.now()); }
 
 function lookAt(fix, gpsSpeed) {
   if (C.heading == null) return {};
@@ -639,7 +628,7 @@ async function startCopilot() {
   CP.rateF = 0;
   CP.arcTimer = setInterval(() => {
     // a smoothed turn rate: it rises and falls gradually, so the band never flips between 'turning' and 'not'
-    const before = CP.rateF; CP.rateF = before * 0.75 + (turnRate() ?? 0) * 0.25;
+    const before = CP.rateF; CP.rateF = smoothRate(before, turnRate());
     if (!CP.on || !CP.lastR || CP.lastR.path || (Math.abs(CP.rateF) < 1 && Math.abs(before) < 1)) return;
     drawPath(steadyPath({ ...CP.lastR }), pathOpts(CP.lastR));
   }, 100);
@@ -697,7 +686,7 @@ async function loopCopilot() {
         const key = CP.key = keyMoment(last);
         if (t0 >= nextFull) { op = 'look';
           last = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null, limit: limitNow(), map: mapAhead(), speed: S.gpsSpeed ?? 0 });
-          CP.lastR = last;
+          last.stamp = performance.now(); CP.lastR = last;
           drawPath(steadyPath(last), pathOpts(last));
           const done = performance.now();
           CP.secs = (done - t0) / 1000; lastDet = done; feed(last, done);
@@ -811,6 +800,7 @@ function pathFrame(now) {
   if (PB.size !== size) { cv.width = Math.round(ew * dpr); cv.height = Math.round(eh * dpr); PB.size = size; }
   cv.hidden = false;
   g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, ew, eh);
+  g.globalAlpha = 0.4 + 0.6 * (PB.cur.opts.conf ?? 1); // unsure: a fainter band
   const s = Math.max(ew / vw, eh / vh), ox = (ew - vw * s) / 2, oy = (eh - vh * s) / 2; // object-fit: cover
   const f = vw / 2 / Math.tan(hfov() * Math.PI / 360);
   const Praw = (d, y) => [ox + (vw / 2 - f * y / d) * s, oy + (vh / 2 + f * 1.1 / d) * s];
@@ -909,36 +899,13 @@ function pathFrame(now) {
 // a straight base it bends through its points. The map-based driver path fought it (calling a turn
 // still 90 m away right under the bike), so it only draws when the lane finder isn't available.
 function steadyPath(r) {
-  // with the lane finder the base is where your current motion takes you: straight, or, when you're
-  // already turning (6+ degrees a second while moving), the arc you're on (radius = speed / turn rate)
-  const rate = CP.rateF ?? 0, v = S.gpsSpeed ?? 0;
-  const strength = Math.max(0, Math.min(1, (Math.abs(rate) - 4) / 8)); // 0 below 4 deg/s, full from 12
-  const turning = strength > 0;
-  const arc = turning
-    ? (copilot.pathAhead()?.dist || [5, 10, 15]).map((d) => { const k = (rate * Math.PI / 180) / Math.max(v, 1.5); return strength * Math.max(-0.8 * d, Math.min(0.8 * d, -k * d * d / 2)); })
-    : [0, 0, 0];
-  // with directions on, steer like the simulator: the driver model, given the route's shape from the map;
-  // without directions (Free ride) there's no route to plan from, so the lane finder places the band
-  // the driver model was only trained moving (2+ m/s); slower than that, show the route itself
-  let planned = r.path;
-  if (planned && v < 1.5) {
-    const mp = mapAhead(), ds = copilot.pathAhead()?.dist || [5, 10, 15];
-    planned = mp && mp.slice(0, 3).every((y) => y != null) ? mp.slice(0, 3).map((y, i) => y) : null;
-  }
-  if (planned) { const ds = copilot.pathAhead()?.dist || [5, 10, 15]; planned = planned.map((y, i) => Math.max(-0.7 * ds[i], Math.min(0.7 * ds[i], y))); }
-  const now = planned ? planned : r.lane ? arc : [0, 0, 0];
-  const keep = PB.steady && performance.now() - PB.steady.at < 3000;
-  const w = turning ? 0.6 : 0.5;
-  const ys = keep ? now.map((y, i) => w * y + (1 - w) * PB.steady.ys[i]) : now;
-  if (r.lane && !planned) {
-    // the lane finder jitters from look to look on a bumpy road: ease toward each new answer, and don't
-    // let the middle point swing out past near and far (that's the S-shape / snake)
-    const x = keep && PB.steady.lane ? r.lane.x.map((v, i) => 0.35 * v + 0.65 * PB.steady.lane[i]) : r.lane.x.slice();
-    const lo = Math.min(x[0], x[2]) - 0.02, hi = Math.max(x[0], x[2]) + 0.02; x[1] = Math.max(lo, Math.min(hi, x[1]));
-    r.lane = { ...r.lane, x };
-  }
-  PB.steady = { ys, lane: planned ? null : r.lane?.x, at: performance.now() };
-  return ys;
+  // all the deciding lives in band.js (and is replayed against recorded rides by tests/band.replay.mjs)
+  const v = S.gpsSpeed ?? 0, dists = copilot.pathAhead()?.dist || [5, 10, 15];
+  const out = planBand(PB.steady, { now: performance.now(), v, rate: CP.rateF ?? 0, path: r.path, lane: r.lane, dists,
+    route: r.path && v < 1.5 ? mapAhead() : null, lookId: r.stamp, acc: S.lastFix?.acc });
+  if (r.lane) r.lane = out.laneX ? { ...r.lane, x: out.laneX } : r.lane;
+  PB.steady = out.state;
+  return out.ys;
 }
 
 // Where the path should end (a stop it plans), whether the AI wants to go faster than you are,
@@ -948,7 +915,7 @@ function pathOpts(r) {
   const red = r.seen?.red || (CP.light && performance.now() - CP.light.at < 4000 && CP.light.red);
   const now = performance.now(), waitCar = now - (CP.crossingAt || -1e9) < 1500;
   const stopAt = stopIn != null ? Math.max(2.5, stopIn) : red || waitCar ? 4 : null;
-  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1, slowing: r.slow >= 0.6 || r.speed < (S.gpsSpeed ?? 0) - 1.5, lane: r.path ? null : r.lane || null, rate: CP.rateF ?? 0 };
+  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1, slowing: r.slow >= 0.6 || r.speed < (S.gpsSpeed ?? 0) - 1.5, lane: r.path ? null : r.lane || null, rate: CP.rateF ?? 0, conf: PB.steady?.conf ?? 1 };
 }
 
 // A key moment: something's happening, so the model looks every second (as the

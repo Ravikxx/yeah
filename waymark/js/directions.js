@@ -1,7 +1,7 @@
 // Turn-by-turn from the router (OSRM responses via the Waymark Worker).
 
-import { getDirections, getRoadSpeeds } from './api.js?v=202610261927';
-import { formatDistance } from './geo.js?v=202610261927';
+import { getDirections, getRoadSpeeds } from './api.js?v=202610261952';
+import { formatDistance } from './geo.js?v=202610261952';
 
 const COMPASS = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'];
 export const compass = (deg) => COMPASS[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
@@ -76,6 +76,9 @@ function flatten(r, mode, from, to) {
 const BIG_NAME = /highway|expressway|freeway|parkway|bypass|pike|route \d/i;
 export const isBigRoad = (s) => Boolean(s.ref) || BIG_NAME.test(s.name || '');
 const MID_MPH = 30, FAST_MPH = 38;
+// 2 = busy, 1 = medium, 0 = quiet: the map's own road facts (class, lanes, posted limit) when the
+// backend has them, else the router's car-speed estimate
+const levelOf = (x) => Math.max(x.level ?? 0, x.mph >= FAST_MPH ? 2 : x.mph >= MID_MPH ? 1 : 0);
 
 function sample(latlngs, n = 85) {
   let total = 0; const cum = [0];
@@ -98,15 +101,15 @@ async function roadLoad(trip) {
     if (st.length) {
       let run = null, cur = null;
       st.forEach((x, i) => {
-        if (x.mph >= MID_MPH) {
+        if (levelOf(x) >= 1) {
           if (!cur) cur = { i0: i, i1: i, m: 0 };
           cur.i1 = i; cur.m += x.m;
           if (!run || cur.m > run.m) run = { ...cur };
         } else cur = null;
       });
       const worst = run && { a: pts[run.i0], b: pts[run.i1 + 1] || pts[run.i1], m: run.m };
-      return { fast: st.filter((x) => x.mph >= FAST_MPH).reduce((m, x) => m + x.m, 0),
-               mid: st.filter((x) => x.mph >= MID_MPH && x.mph < FAST_MPH).reduce((m, x) => m + x.m, 0),
+      return { fast: st.filter((x) => levelOf(x) === 2).reduce((m, x) => m + x.m, 0),
+               mid: st.filter((x) => levelOf(x) === 1).reduce((m, x) => m + x.m, 0),
                top: Math.max(...st.map((x) => x.top)), worst };
     }
   } catch { /* fall back to route numbers */ }
@@ -136,7 +139,7 @@ async function planBackRoads(mode, from, to, bearing) {
   if (!all.length) throw new Error('No route found between those points.');
   const shortest = Math.min(...all.map((t) => t.distance));
   const okLen = (t) => t.distance <= shortest * 1.8 && !t.steps.some((s) => s.maneuver?.modifier === 'uturn');
-  const score = (t, l) => t.distance + 6 * l.fast + 3 * l.mid;
+  const score = (t, l) => t.distance + 10 * l.fast + 5 * l.mid; // a busy metre counts like 10 metres of quiet street
   const scored = [];
   const add = async (trips) => {
     const fresh = trips.filter(okLen).filter((t) => !scored.some((s) => Math.abs(s.t.distance - t.distance) < 15));

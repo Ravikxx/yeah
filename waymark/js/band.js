@@ -1,0 +1,86 @@
+// Where the blue band goes, as plain functions with no page in them (so a test can replay recorded rides through
+// exactly the code the phone runs). One pipeline, in this order:
+//   1. turn rate: how fast the compass is turning, ignoring wobble          (turnRateFrom, smoothRate)
+//   2. the target path: the driver model (with directions), or the route itself when slow, or the
+//      lane finder + the turn you're in (Free ride)                         (planBand)
+//   3. one smoothing step, and one confidence number the band's opacity follows
+// All offsets are metres to the LEFT (+) of the way you're facing, at 5, 10 and 15 m ahead.
+
+export const DISTS = [5, 10, 15];
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// Degrees a second, + = turning right, from compass samples [{ t (ms), h (deg) }] over the last ~0.8 s.
+// null when unknown: too few samples, stale, nearly stopped, or a wobble (a real turn keeps going the same
+// way; a bump on the road swings the bars back and forth).
+export function turnRateFrom(hist, v, now) {
+  if (!hist || hist.length < 6 || v < 0.8 || now - hist[hist.length - 1].t > 400) return null;
+  const last = hist[hist.length - 1], old = hist.find((q) => now - q.t <= 800) || hist[0], dt = (last.t - old.t) / 1000;
+  if (dt < 0.4) return null;
+  const d = (a, b) => ((b.h - a.h + 540) % 360) - 180;
+  const mid = hist.find((q) => q.t >= old.t + (last.t - old.t) / 2) || last;
+  const r = d(old, last) / dt, r1 = d(old, mid) / (dt / 2), r2 = d(mid, last) / (dt / 2);
+  if (r1 * r2 <= 0 || Math.min(Math.abs(r1), Math.abs(r2)) < 0.5 * Math.abs(r)) return null;
+  return r;
+}
+
+// Rises and falls gradually, and decays to 0 when the compass says nothing: the band never flips between
+// "turning" and "not".
+export const smoothRate = (prev, tr) => (prev ?? 0) * 0.75 + (tr ?? 0) * 0.25;
+
+// 0 below 4 deg/s, full from 12.
+export const turnStrength = (rate) => clamp((Math.abs(rate) - 4) / 8, 0, 1);
+// How much the lane finder still counts: fully up to 6 deg/s, not at all from 26 (in a turn the road in the
+// picture is the road you're leaving).
+export const laneWeight = (rate) => clamp(1 - (Math.abs(rate) - 6) / 20, 0, 1);
+
+// The arc you're on (radius = speed / turn rate), as left offsets at the given distances.
+export function turnArc(rate, v, dists = DISTS) {
+  const s = turnStrength(rate);
+  if (!s) return dists.map(() => 0);
+  const k = (rate * Math.PI / 180) / Math.max(v, 1.5);
+  return dists.map((d) => s * clamp(-k * d * d / 2, -0.8 * d, 0.8 * d));
+}
+
+// st: what this returned last time (null at the start).
+// in: { now (ms), v (m/s), rate (smoothed deg/s), path (driver model or null), lane ({x:[near,mid,far]} or null),
+//       route (the map route's offsets at 5/10/15 m, or null), dists, lookId (changes with each new AI look),
+//       acc (GPS accuracy m, optional) }
+// -> { ys, laneX, conf, state }
+export function planBand(st, { now, v, rate, path, lane, route = null, dists = DISTS, lookId = null, acc = 0 }) {
+  const strength = turnStrength(rate);
+  // with directions the driver model plans from the route's shape; below ~3 mph (where it was never trained)
+  // the route itself is shown; with no directions the lane finder places the band and the turn you're in bends it
+  let planned = path || null;
+  if (planned && v < 1.5) planned = route && route.slice(0, 3).every((y) => y != null) ? route.slice(0, 3) : null;
+  if (planned) planned = planned.map((y, i) => clamp(y, -0.7 * dists[i], 0.7 * dists[i]));
+  const target = planned || (lane ? turnArc(rate, v, dists) : [0, 0, 0]);
+  const keep = st && now - st.at < 3000;
+  const w = strength > 0 ? 0.6 : 0.5;
+  const ys = keep ? target.map((y, i) => w * y + (1 - w) * st.ys[i]) : target;
+
+  // the lane finder jitters from look to look on a bumpy road: ease toward each NEW answer (not on every redraw),
+  // and don't let the middle point swing out past near and far (that's the S-shape)
+  let laneX = null, jitter = 0;
+  if (lane && !planned) {
+    const sameLook = keep && st.lane && lookId != null && st.lookId === lookId;
+    if (sameLook) laneX = st.lane;
+    else {
+      laneX = keep && st.lane ? lane.x.map((x, i) => 0.35 * x + 0.65 * st.lane[i]) : lane.x.slice();
+      if (keep && st.lane) jitter = Math.max(...lane.x.map((x, i) => Math.abs(x - st.lane[i])));
+      const lo = Math.min(laneX[0], laneX[2]) - 0.02, hi = Math.max(laneX[0], laneX[2]) + 0.02;
+      laneX[1] = clamp(laneX[1], lo, hi);
+    }
+  }
+
+  // confidence: fades the band when the pieces disagree or the inputs are poor (a faint line is better than
+  // a confident wrong one)
+  let pen = 0;
+  if (jitter > 0.10) pen += 0.35;                       // the lane finder jumped between looks
+  if (acc > 30) pen += 0.25;                            // poor GPS
+  if (path && route && v >= 1.5) {                      // the model and the route should roughly agree
+    const gap = route.slice(0, 3).reduce((a, y, i) => a + (y == null ? 0 : Math.abs(y - path[i])), 0) / 3;
+    if (gap > 4) pen += 0.3;
+  }
+  const conf = clamp(0.7 * (st?.conf ?? 1) + 0.3 * (1 - pen), 0.35, 1);
+  return { ys, laneX, conf, state: { ys, lane: laneX, at: now, conf, lookId } };
+}
