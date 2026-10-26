@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261528';
-import * as queue from './queue.js?v=202610261528';
-import * as coverage from './coverage.js?v=202610261528';
-import { findView } from './street.js?v=202610261528';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261528';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261528';
-import { coverageLines } from './street.js?v=202610261528';
-import { planTrip } from './directions.js?v=202610261528';
-import * as copilot from './copilot.js?v=202610261528';
-import { searchPlaces } from './api.js?v=202610261528';
-import { snapToTrack } from './geo.js?v=202610261528';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261528';
+import { pickMime } from './record.js?v=202610261532';
+import * as queue from './queue.js?v=202610261532';
+import * as coverage from './coverage.js?v=202610261532';
+import { findView } from './street.js?v=202610261532';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261532';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261532';
+import { coverageLines } from './street.js?v=202610261532';
+import { planTrip } from './directions.js?v=202610261532';
+import * as copilot from './copilot.js?v=202610261532';
+import { searchPlaces } from './api.js?v=202610261532';
+import { snapToTrack } from './geo.js?v=202610261532';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261532';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -849,9 +849,11 @@ function pathFrame(now) {
 }
 
 // Smooth the path and the lane finder from look to look (half the new, half the last), so one odd
-// look can't throw the band around. No directions: straight ahead (the lane finder still bends it).
+// look can't throw the band around. With the lane finder (trained on your taps) the band is its alone:
+// a straight base it bends through its points. The map-based driver path fought it (calling a turn
+// still 90 m away right under the bike), so it only draws when the lane finder isn't available.
 function steadyPath(r) {
-  const now = r.path || [0, 0, 0];
+  const now = r.lane ? [0, 0, 0] : r.path || [0, 0, 0];
   const keep = PB.steady && performance.now() - PB.steady.at < 3000;
   const ys = keep ? now.map((y, i) => 0.5 * y + 0.5 * PB.steady.ys[i]) : now;
   if (r.lane) r.lane = { ...r.lane, x: keep && PB.steady.lane ? r.lane.x.map((x, i) => 0.5 * x + 0.5 * PB.steady.lane[i]) : r.lane.x };
