@@ -3,19 +3,19 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610262054';
-import * as queue from './queue.js?v=202610262054';
-import * as coverage from './coverage.js?v=202610262054';
-import { findView } from './street.js?v=202610262054';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262054';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262054';
-import { coverageLines } from './street.js?v=202610262054';
-import { planTrip } from './directions.js?v=202610262054';
-import * as copilot from './copilot.js?v=202610262054';
-import { searchPlaces } from './api.js?v=202610262054';
-import { snapToTrack } from './geo.js?v=202610262054';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262054';
-import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610262054';
+import { pickMime } from './record.js?v=202610262059';
+import * as queue from './queue.js?v=202610262059';
+import * as coverage from './coverage.js?v=202610262059';
+import { findView } from './street.js?v=202610262059';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262059';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262059';
+import { coverageLines } from './street.js?v=202610262059';
+import { planTrip } from './directions.js?v=202610262059';
+import * as copilot from './copilot.js?v=202610262059';
+import { searchPlaces } from './api.js?v=202610262059';
+import { snapToTrack } from './geo.js?v=202610262059';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262059';
+import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610262059';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -657,7 +657,7 @@ async function startCopilot() {
   CP.rateF = 0;
   CP.arcTimer = setInterval(() => {
     // a smoothed turn rate: it rises and falls gradually, so the band never flips between 'turning' and 'not'
-    const before = CP.rateF; CP.rateF = smoothRate(before, turnRate());
+    const before = CP.rateF; CP.rateF = smoothRate(before, turnRate()); traceTick();
     if (!CP.on || !CP.lastR || CP.lastR.path || (Math.abs(CP.rateF) < 1 && Math.abs(before) < 1)) return;
     drawPath(steadyPath({ ...CP.lastR }), pathOpts(CP.lastR));
   }, 100);
@@ -1022,6 +1022,28 @@ function showCopilot(r, secs) {
 
 // "(eyes 120 · cars 520 · lane 40 ms)": where one look's time went
 const DEBUG_TURN = new URLSearchParams(location.search).has('debugturn'); // add ?debugturn=1 before the # to see the sensors
+// the last ~12 s of turn sensors (twice a second), attached to a "Co-pilot is wrong" tap so a bad turn can be looked at afterwards
+const TRACE = [];
+let traceN = 0;
+function traceTick() {
+  if (++traceN % 5) return;
+  const g = GY.last;
+  TRACE.push({ t: performance.now(), r: CP.rateF ?? 0, gy: g?.gy ?? null, comp: g?.comp ?? null, v: S.gpsSpeed ?? null, hc: C.hist?.length ?? 0, hg: GY.hist.length });
+  while (TRACE.length && performance.now() - TRACE[0].t > 12000) TRACE.shift();
+  if (!DEBUG_TURN) return;
+  let el = document.getElementById('turnDbg');
+  if (!el) { el = document.createElement('pre'); el.id = 'turnDbg'; el.style.cssText = 'position:fixed;left:8px;right:8px;bottom:250px;z-index:60;margin:0;padding:6px 8px;font:11px/1.3 ui-monospace,monospace;color:#9f9;background:rgba(0,0,0,.65);border-radius:8px;pointer-events:none;white-space:pre-wrap'; document.body.append(el); }
+  const f = (x) => (x == null ? '–' : Math.round(x));
+  el.textContent = `turn ${f(CP.rateF)}°/s  gyro ${f(g?.gy)}  compass ${f(g?.comp)}  sign ${g?.sg ?? 0}  speed ${S.gpsSpeed == null ? '–' : (S.gpsSpeed * 2.237).toFixed(1)} mph\ngyro ${GY.on ? 'on' : 'OFF'} (${GY.hist.length})  compass ${C.heading == null ? 'OFF' : Math.round(C.heading) + '°'} (${C.hist?.length ?? 0})`;
+}
+function traceText() { // 1 s steps, newest last: rate:gyro:compass
+  const now = performance.now(), out = [];
+  for (let k = 8; k >= 0; k--) {
+    const q = TRACE.reduce((a, b) => (Math.abs(b.t - (now - k * 1000)) < Math.abs(a.t - (now - k * 1000)) ? b : a), TRACE[0]);
+    if (q) out.push(`${Math.round(q.r)}:${q.gy == null ? '-' : Math.round(q.gy)}:${q.comp == null ? '-' : Math.round(q.comp)}`);
+  }
+  return out.join(' ');
+}
 function turnDebug() {
   if (!DEBUG_TURN) return '';
   const f = (x) => (x == null ? '–' : Math.round(x));
@@ -1103,9 +1125,10 @@ function copilotShows() {
   // what the co-pilot had on screen: its alert line and the band (left offsets in metres at 5/10/15 m)
   if (!CP.on) return 'off';
   const box = document.getElementById('copilot');
-  const alert = box.querySelector('.cp-alert').textContent.trim(), detail = box.querySelector('.cp-detail').textContent.trim();
+  const alert = box.querySelector('.cp-alert').textContent.trim();
   const band = PB.cur ? pathNow(performance.now()).slice(1).map((y) => y.toFixed(2)).join(',') : 'none';
-  return `alert=${alert}${detail ? ` (${detail})` : ''}; band=${band}`;
+  // the sensor trace goes first: notes are cut at 280 characters
+  return `turn(r:gyro:compass, 1/s)=${traceText()}; band=${band}; alert=${alert}`;
 }
 
 function wireStopWhy() {
