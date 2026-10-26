@@ -809,7 +809,10 @@ function pathFrame(now) {
   // mostly through its mid and far points; the rest comes from your motion (the turn you're in)
   const ln = opts.lane;
   if (ln && C.length > 2) {
-    const [lcx, lcy, lcw, lch] = ln.crop, K = [1, 0.75, 0.5]; // further out, the turn you're in counts more
+    // while you're really turning (compass), the road ahead in the picture is the road you're leaving, so the
+    // lane finder's pull fades out: at 4 deg/s it counts fully, by 24 deg/s the turn you're in takes over
+    const tf = opts.rate == null ? 1 : Math.max(0, Math.min(1, 1 - (Math.abs(opts.rate) - 4) / 20));
+    const [lcx, lcy, lcw, lch] = ln.crop, K = [1, 0.75, 0.5].map((k) => k * tf); // further out, the turn you're in counts more
     const pts = ln.rows.map((row, i) => {
       const X = ox + (lcx + ln.x[i] * lcw) * s, Y = oy + (lcy + row * lch) * s;
       const c = C.reduce((a, q) => (Math.abs(Praw(q.d, q.y)[1] - Y) < Math.abs(Praw(a.d, a.y)[1] - Y) ? q : a));
@@ -905,7 +908,7 @@ function pathOpts(r) {
   const red = r.seen?.red || (CP.light && performance.now() - CP.light.at < 4000 && CP.light.red);
   const now = performance.now(), waitCar = now - (CP.crossingAt || -1e9) < 1500;
   const stopAt = stopIn != null ? Math.max(2.5, stopIn) : red || waitCar ? 4 : null;
-  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1, slowing: r.slow >= 0.6 || r.speed < (S.gpsSpeed ?? 0) - 1.5, lane: r.lane || null };
+  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1, slowing: r.slow >= 0.6 || r.speed < (S.gpsSpeed ?? 0) - 1.5, lane: r.lane || null, rate: turnRate() };
 }
 
 // A key moment: something's happening, so the model looks every second (as the
