@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261924';
-import * as queue from './queue.js?v=202610261924';
-import * as coverage from './coverage.js?v=202610261924';
-import { findView } from './street.js?v=202610261924';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261924';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261924';
-import { coverageLines } from './street.js?v=202610261924';
-import { planTrip } from './directions.js?v=202610261924';
-import * as copilot from './copilot.js?v=202610261924';
-import { searchPlaces } from './api.js?v=202610261924';
-import { snapToTrack } from './geo.js?v=202610261924';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261924';
+import { pickMime } from './record.js?v=202610261927';
+import * as queue from './queue.js?v=202610261927';
+import * as coverage from './coverage.js?v=202610261927';
+import { findView } from './street.js?v=202610261927';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261927';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261927';
+import { coverageLines } from './street.js?v=202610261927';
+import { planTrip } from './directions.js?v=202610261927';
+import * as copilot from './copilot.js?v=202610261927';
+import { searchPlaces } from './api.js?v=202610261927';
+import { snapToTrack } from './geo.js?v=202610261927';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261927';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -289,16 +289,23 @@ function turnRate() {
 function lookAt(fix, gpsSpeed) {
   if (C.heading == null) return {};
   const compass = Math.round(C.heading);
-  const moving = (gpsSpeed ?? 0) > 2 && S.heading != null;
+  // learn how the phone sits on the bars (compass vs the way you travel) only while the GPS bearing is
+  // fresh: riding at a steady heading, not turning (the bearing lags in a turn and would skew it)
+  const moving = (gpsSpeed ?? 0) > 2.5 && S.heading != null && Math.abs(CP.rateF ?? 0) < 4;
   if (moving) {
     C.offsets.push(wrap(compass - S.heading));
     if (C.offsets.length > 60) C.offsets.shift();
   }
-  if (C.offsets.length < 5 || S.heading == null) return { compass, look: null };
-  // circular median-ish: average around the first offset
-  const ref = C.offsets[0];
-  const off = ref + C.offsets.reduce((a, o) => a + wrap(o - ref), 0) / C.offsets.length;
+  const off = mountOffset();
+  if (off == null || S.heading == null) return { compass, look: null };
   return { compass, look: Math.round(wrap(compass - off - S.heading)) };
+}
+
+// the middle value (not the average), so a few bad samples can't drag it
+function mountOffset() {
+  const o = C.offsets; if (o.length < 5) return null;
+  const ref = o[0], d = o.map((x) => wrap(x - ref)).sort((a, b) => a - b);
+  return ref + d[d.length >> 1];
 }
 
 // ---------- GPS ----------
@@ -725,10 +732,8 @@ async function loopCopilot() {
 // (learned while riding). Works stopped, at walking speed and mid-turn; the GPS bearing only
 // updates after ~8 m of riding, so it's stale in exactly those moments.
 function travelHeading() {
-  if (C.heading != null && C.offsets.length >= 5) {
-    const ref = C.offsets[0], off = ref + C.offsets.reduce((a, o) => a + wrap(o - ref), 0) / C.offsets.length;
-    return (C.heading - off + 360) % 360;
-  }
+  const off = mountOffset();
+  if (C.heading != null && off != null) return (C.heading - off + 360) % 360;
   return S.heading;
 }
 
@@ -918,8 +923,9 @@ function steadyPath(r) {
   let planned = r.path;
   if (planned && v < 1.5) {
     const mp = mapAhead(), ds = copilot.pathAhead()?.dist || [5, 10, 15];
-    planned = mp && mp.slice(0, 3).every((y) => y != null) ? mp.slice(0, 3).map((y, i) => Math.max(-0.8 * ds[i], Math.min(0.8 * ds[i], y))) : null;
+    planned = mp && mp.slice(0, 3).every((y) => y != null) ? mp.slice(0, 3).map((y, i) => y) : null;
   }
+  if (planned) { const ds = copilot.pathAhead()?.dist || [5, 10, 15]; planned = planned.map((y, i) => Math.max(-0.7 * ds[i], Math.min(0.7 * ds[i], y))); }
   const now = planned ? planned : r.lane ? arc : [0, 0, 0];
   const keep = PB.steady && performance.now() - PB.steady.at < 3000;
   const w = turning ? 0.6 : 0.5;
