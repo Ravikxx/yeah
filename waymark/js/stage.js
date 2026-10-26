@@ -6,11 +6,11 @@
 // hidden one while the current frame stays on screen, then they swap. So
 // moving between 2-minute pieces never flashes black.
 
-import { videoUrl } from './api.js?v=202610262016';
-import { compass } from './directions.js?v=202610262016';
-import { makeMap, viewerIcon, drawCoverage } from './ui.js?v=202610262016';
-import { coverageLines } from './street.js?v=202610262016';
-import * as coverage from './coverage.js?v=202610262016';
+import { videoUrl } from './api.js?v=202610262019';
+import { compass } from './directions.js?v=202610262019';
+import { makeMap, viewerIcon, drawCoverage } from './ui.js?v=202610262019';
+import { coverageLines } from './street.js?v=202610262019';
+import * as coverage from './coverage.js?v=202610262019';
 
 const el = {};
 let wired = false;

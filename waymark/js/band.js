@@ -90,3 +90,40 @@ export function planBand(st, { now, v, rate, path, lane, route = null, dists = D
   const conf = clamp(0.7 * (st?.conf ?? 1) + 0.3 * (1 - pen), 0.35, 1);
   return { ys, laneX, conf, state: { ys, lane: laneX, at: now, conf, lookId } };
 }
+
+// ---------- obstacles and rules: they change where the band goes, not just what the text says ----------
+const CLEAR = 1.6;     // metres between a car's middle and the band's middle (car half-width + room for a bike)
+const MAX_SHIFT = 1.5; // never swerve more than this to pass a parked car
+
+// cars: [{ dist (m ahead), side (m, + = YOUR RIGHT), moving }] seen in the last second or so.
+// ys: the planned left offsets at `dists`. -> { ys, stopAt, slow }
+//   - a parked car in the way: the band moves to the side with room to pass; if that side is blocked too, it
+//     ends behind the car
+//   - a car moving in your lane: the band ends behind it, at a gap of 3 m + 1.5 s of speed (as in the simulator)
+export function avoidCars(ys, cars, { v = 0, dists = DISTS } = {}) {
+  const at = (arr, d) => { // the band's left offset d metres ahead (0 at the wheel)
+    if (d <= dists[0]) return arr[0] * d / dists[0];
+    for (let i = 1; i < dists.length; i++) if (d <= dists[i]) return arr[i - 1] + (arr[i] - arr[i - 1]) * (d - dists[i - 1]) / (dists[i] - dists[i - 1]);
+    return arr[arr.length - 1];
+  };
+  const gap = 3 + 1.5 * v;
+  let out = ys.slice(), stopAt = null, slow = false;
+  const list = (cars || []).filter((c) => c.dist > 2 && c.dist < 25).map((c) => ({ ...c, x: -c.side })).sort((a, b) => a.dist - b.dist);
+  for (const c of list) {
+    const off = at(out, c.dist) - c.x;                      // + = the band is to the car's left
+    if (Math.abs(off) >= CLEAR) continue;                   // already clear of it
+    if (c.moving) {                                         // follow it, don't pass
+      if (c.dist - gap < 12) { stopAt = Math.min(stopAt ?? Infinity, Math.max(2.5, c.dist - gap)); slow = true; }
+      continue;
+    }
+    const dir = off >= 0 ? 1 : -1, shift = Math.min(MAX_SHIFT, CLEAR - Math.abs(off));
+    const moved = out.map((y, i) => y + dir * shift * Math.exp(-(((dists[i] - c.dist) / 6) ** 2)));
+    // room to pass? not if the move would put the band into another car
+    if (list.some((o) => o !== c && Math.abs(at(moved, o.dist) - o.x) < 1.2)) { stopAt = Math.min(stopAt ?? Infinity, Math.max(2.5, c.dist - 3)); slow = true; }
+    else out = moved;
+  }
+  return { ys: out, stopAt, slow };
+}
+
+// The nearest of the places the band should end (stop sign / red light / crossing car / the car ahead), or null.
+export const nearestStop = (...ds) => { const v = ds.filter((d) => d != null); return v.length ? Math.min(...v) : null; };

@@ -3,19 +3,19 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610262016';
-import * as queue from './queue.js?v=202610262016';
-import * as coverage from './coverage.js?v=202610262016';
-import { findView } from './street.js?v=202610262016';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262016';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262016';
-import { coverageLines } from './street.js?v=202610262016';
-import { planTrip } from './directions.js?v=202610262016';
-import * as copilot from './copilot.js?v=202610262016';
-import { searchPlaces } from './api.js?v=202610262016';
-import { snapToTrack } from './geo.js?v=202610262016';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262016';
-import { turnRateFrom, smoothRate, planBand } from './band.js?v=202610262016';
+import { pickMime } from './record.js?v=202610262019';
+import * as queue from './queue.js?v=202610262019';
+import * as coverage from './coverage.js?v=202610262019';
+import { findView } from './street.js?v=202610262019';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262019';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262019';
+import { coverageLines } from './street.js?v=202610262019';
+import { planTrip } from './directions.js?v=202610262019';
+import * as copilot from './copilot.js?v=202610262019';
+import { searchPlaces } from './api.js?v=202610262019';
+import { snapToTrack } from './geo.js?v=202610262019';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262019';
+import { turnRateFrom, smoothRate, planBand } from './band.js?v=202610262019';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -647,7 +647,7 @@ async function startCopilot() {
 }
 
 function stopCopilot() {
-  CP.on = false; clearInterval(CP.arcTimer); CP.lastR = null; CP.rateF = 0;
+  CP.on = false; clearInterval(CP.arcTimer); CP.lastR = null; CP.rateF = 0; CP.cars = null;
   document.getElementById('copilotBtn')?.setAttribute('aria-pressed', 'false');
   const box = document.getElementById('copilot'); if (box) box.hidden = true;
   drawPath(null);
@@ -678,6 +678,9 @@ async function loopCopilot() {
     // the nearest car in your lane ahead (moving or not), within 25 m
     const ahead = cars.filter((c) => Math.abs(c.side) < 1.6 && c.dist < 25).sort((a, b) => a.dist - b.dist)[0];
     if (ahead) { CP.aheadAt = now; CP.aheadDist = ahead.dist; }
+    // the band steers around parked cars and ends behind moving ones (band.js: avoidCars)
+    CP.cars = cars.map((c) => ({ dist: c.dist, side: c.side, moving: !!(c.moving || c.crossing) })); CP.carsAt = now;
+    if (CP.on && CP.lastR) drawPath(steadyPath({ ...CP.lastR }), pathOpts(CP.lastR));
   };
   while (CP.on) {
     const t0 = performance.now(); let op = 'track';
@@ -904,8 +907,10 @@ function steadyPath(r) {
   const out = planBand(PB.steady, { now: performance.now(), v, rate: CP.rateF ?? 0, path: r.path, lane: r.lane, dists,
     route: r.path ? mapAhead() : null, lookId: r.stamp, acc: S.lastFix?.acc });
   if (r.lane) r.lane = out.laneX ? { ...r.lane, x: out.laneX } : r.lane;
-  PB.steady = out.state;
-  return out.ys;
+  PB.steady = out.state; // the smoothing keeps the plan as it was; cars are applied on top, fresh each time
+  const cars = CP.cars && performance.now() - CP.carsAt < 1500 ? CP.cars : [];
+  PB.avoid = avoidCars(out.ys, cars, { v, dists });
+  return PB.avoid.ys;
 }
 
 // Where the path should end (a stop it plans), whether the AI wants to go faster than you are,
@@ -914,8 +919,9 @@ function pathOpts(r) {
   const stopIn = stopAhead();
   const red = r.seen?.red || (CP.light && performance.now() - CP.light.at < 4000 && CP.light.red);
   const now = performance.now(), waitCar = now - (CP.crossingAt || -1e9) < 1500;
-  const stopAt = stopIn != null ? Math.max(2.5, stopIn) : red || waitCar ? 4 : null;
-  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1, slowing: r.slow >= 0.6 || r.speed < (S.gpsSpeed ?? 0) - 1.5, lane: r.path ? null : r.lane || null, rate: CP.rateF ?? 0, conf: PB.steady?.conf ?? 1 };
+  // the nearest place to stop: a sign, a red light, a crossing car, or the car in front (or a parked car you can't pass)
+  const stopAt = nearestStop(stopIn != null ? Math.max(2.5, stopIn) : red || waitCar ? 4 : null, PB.avoid?.stopAt ?? null);
+  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1, slowing: r.slow >= 0.6 || r.speed < (S.gpsSpeed ?? 0) - 1.5 || !!PB.avoid?.slow, lane: r.path ? null : r.lane || null, rate: CP.rateF ?? 0, conf: PB.steady?.conf ?? 1 };
 }
 
 // A key moment: something's happening, so the model looks every second (as the
