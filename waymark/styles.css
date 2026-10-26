@@ -1097,12 +1097,18 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
   backdrop-filter: var(--hud-blur); -webkit-backdrop-filter: var(--hud-blur);
 }
 .stop-why:active { transform: scale(.97); }
-.stop-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.stop-sheet { max-height: 46%; gap: 8px; padding-top: 12px; background: rgb(14 16 20 / .78); }
+.stop-sheet .place-head { font-size: var(--t-base); }
+.stop-sheet .stop-hint { display: none; }
+.stop-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .stop-grid button {
-  min-height: 56px; padding: 10px 12px; border-radius: 14px; border: 0; text-align: left; cursor: pointer;
-  background: rgb(255 255 255 / .08); color: #fff; font: 600 var(--t-base)/1.2 var(--f);
+  min-height: 48px; padding: 8px 10px; border-radius: 12px; border: 0; text-align: left; cursor: pointer;
+  background: rgb(255 255 255 / .1); color: #fff; font: 600 .9rem/1.15 var(--f);
 }
+.stop-grid button.saved { animation: stop-saved .9s var(--ease); }
+@keyframes stop-saved { 0%, 40% { background: var(--accent); } 100% { background: rgb(255 255 255 / .1); } }
 .stop-grid button:active { background: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .stop-grid button.saved { animation: none; outline: 2px solid var(--accent); } }
 .stop-grid button small { display: block; margin-top: 3px; font-weight: 500; font-size: .8em; color: rgb(255 255 255 / .65); }
 .stop-other { display: flex; gap: 8px; }
 .stop-other input { flex: 1; min-width: 0; min-height: 48px; border-radius: 14px; padding: 0 14px; font: 500 1rem var(--f);

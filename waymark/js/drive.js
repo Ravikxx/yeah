@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261637';
-import * as queue from './queue.js?v=202610261637';
-import * as coverage from './coverage.js?v=202610261637';
-import { findView } from './street.js?v=202610261637';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261637';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261637';
-import { coverageLines } from './street.js?v=202610261637';
-import { planTrip } from './directions.js?v=202610261637';
-import * as copilot from './copilot.js?v=202610261637';
-import { searchPlaces } from './api.js?v=202610261637';
-import { snapToTrack } from './geo.js?v=202610261637';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261637';
+import { pickMime } from './record.js?v=202610261641';
+import * as queue from './queue.js?v=202610261641';
+import * as coverage from './coverage.js?v=202610261641';
+import { findView } from './street.js?v=202610261641';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261641';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261641';
+import { coverageLines } from './street.js?v=202610261641';
+import { planTrip } from './directions.js?v=202610261641';
+import * as copilot from './copilot.js?v=202610261641';
+import { searchPlaces } from './api.js?v=202610261641';
+import { snapToTrack } from './geo.js?v=202610261641';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261641';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -1015,7 +1015,10 @@ function saveStop(code, label, words = '') {
   const fix = S.lastFix;
   c.notes.push({ t: +((performance.now() - c.t0) / 1000).toFixed(2), text: `stop:${code}${words ? ` · ${words}` : ''}`.slice(0, 280),
     lat: fix?.lat ?? null, lng: fix?.lng ?? null });
-  document.getElementById('stopSheet').hidden = true;
+  // the menu stays open (handy to keep up while riding); the button you tapped flashes
+  const b = document.querySelector(`#stopReasons button[data-code="${code}"]`);
+  if (b) { b.classList.remove('saved'); void b.offsetWidth; b.classList.add('saved'); }
+  document.getElementById('stopOther').hidden = true;
   toast(`Saved: ${label}`);
 }
 
