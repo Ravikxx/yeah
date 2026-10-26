@@ -3,19 +3,19 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610262025';
-import * as queue from './queue.js?v=202610262025';
-import * as coverage from './coverage.js?v=202610262025';
-import { findView } from './street.js?v=202610262025';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262025';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262025';
-import { coverageLines } from './street.js?v=202610262025';
-import { planTrip } from './directions.js?v=202610262025';
-import * as copilot from './copilot.js?v=202610262025';
-import { searchPlaces } from './api.js?v=202610262025';
-import { snapToTrack } from './geo.js?v=202610262025';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262025';
-import { turnRateFrom, smoothRate, planBand } from './band.js?v=202610262025';
+import { pickMime } from './record.js?v=202610262034';
+import * as queue from './queue.js?v=202610262034';
+import * as coverage from './coverage.js?v=202610262034';
+import { findView } from './street.js?v=202610262034';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262034';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262034';
+import { coverageLines } from './street.js?v=202610262034';
+import { planTrip } from './directions.js?v=202610262034';
+import * as copilot from './copilot.js?v=202610262034';
+import { searchPlaces } from './api.js?v=202610262034';
+import { snapToTrack } from './geo.js?v=202610262034';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262034';
+import { turnRateFrom, smoothRate, planBand } from './band.js?v=202610262034';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -991,10 +991,10 @@ function showCopilot(r, secs) {
   else if (turn) say(`Turn ${turn}`);
 }
 
-// "(eyes 120 · cars 520 · lane 40 ms)": where one look's time went; the three overlap when they run on the GPU
+// "(eyes 120 · cars 520 · lane 40 ms)": where one look's time went
 function stepTimes() {
   const t = copilot.lastTimes();
-  return t ? ` (eyes ${t.eyes} · cars ${t.cars} · lane ${t.lane ?? 0} · prep ${t.prep} · trees ${t.trees} ms${t.together ? ', together' : ''})` : '';
+  return t ? ` (eyes ${t.eyes} · cars ${t.cars} · lane ${t.lane ?? 0} · prep ${t.prep} · trees ${t.trees} ms)` : '';
 }
 
 function setCopilot({ alert, level = 'info', ai = '–', you = '–', odds = '', detail = '' }) {

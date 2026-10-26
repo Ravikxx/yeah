@@ -544,12 +544,11 @@ export async function look(video, state) {
   const eIn = embedFeeds(video, W, H), dIn = detectInput(img), lIn = laneInput(video, W, H);
   lap('prep');
   const timed = async (k, p) => { const a = performance.now(); const r = await p(); lap(k, a); return r; };
-  // On the GPU the three models run at the same time. On the CPU one at a time: single-threaded
-  // WebAssembly can't run two at once.
-  const together = EP.resnet === 'GPU' && EP.detector === 'GPU' && (!LN || EP.lane === 'GPU');
-  let emb, ds, lane;
-  if (together) [emb, ds, lane] = await Promise.all([timed('eyes', () => embedRun(eIn)), timed('cars', () => detectRun(img, dIn)), timed('lane', () => laneRun(lIn))]);
-  else { emb = await timed('eyes', () => embedRun(eIn)); ds = await timed('cars', () => detectRun(img, dIn)); lane = await timed('lane', () => laneRun(lIn)); }
+  // One model at a time, on the GPU too: the browser's model runtime can't run two at once (it broke every look
+  // when I tried). The inputs were all made from the same frame above, so they still match.
+  const emb = await timed('eyes', () => embedRun(eIn));
+  const ds = await timed('cars', () => detectRun(img, dIn));
+  const lane = await timed('lane', () => laneRun(lIn));
   const tTrees = performance.now();
   const df = detFeats(ds, W, H);
   const lk = state.look ?? null;
@@ -573,7 +572,7 @@ export async function look(video, state) {
   p.path = state.map ? predictPath(x, state.map, state.speed, pic) : null;
   if (p.path && state.map.slice(0, 3).every((v) => v != null && Math.abs(v) < 0.5)) p.path = p.path.map((y) => 0.3 * y); // map says straight: damp the wobble
   p.lane = lane;
-  lap('trees', tTrees); lap('total'); T.together = together; LAST.times = T;
+  lap('trees', tTrees); lap('total'); LAST.times = T;
   // follow the directions when a turn is under 30 m away (as in training)
   const nv = x.slice(-10);
   if (nv[6] < 30 && (nv[1] || nv[2])) p.turn = nv[1] ? [0.75, 0.25, 0] : [0, 0.25, 0.75];
