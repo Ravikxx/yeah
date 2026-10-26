@@ -1104,10 +1104,16 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
   background: rgb(255 255 255 / .1); color: #fff; font: 600 var(--t-base)/1.2 var(--f);
 }
 /* small sheet (the shrink button): 3 columns, see-through, so the road and band stay visible */
+.quick-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.quick-grid button { text-align: center; background: rgb(62 106 225 / .22); }
+.quick-grid button.tag-wrong { background: rgb(232 72 72 / .28); }
+.stop-label { font: 600 .8rem/1 var(--f); letter-spacing: .04em; text-transform: uppercase; color: var(--hud-ink-2); margin-top: 2px; }
 .stop-sheet.mini { max-height: 46%; gap: 8px; padding-top: 12px; background: rgb(14 16 20 / .78); }
 .stop-sheet.mini .place-head { font-size: var(--t-base); }
 .stop-sheet.mini .stop-hint { display: none; }
-.stop-sheet.mini .stop-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.stop-sheet.mini .stop-label { display: none; }
+.stop-sheet.mini .quick-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.stop-sheet.mini .stop-grid:not(.quick-grid) { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .stop-sheet.mini .stop-grid button { min-height: 48px; padding: 8px 10px; border-radius: 12px; font: 600 .9rem/1.15 var(--f); }
 #stopMini[aria-pressed="true"] { background: var(--accent); color: #fff; }
 .stop-grid button.saved { animation: stop-saved .9s var(--ease); }

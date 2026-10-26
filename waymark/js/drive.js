@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261644';
-import * as queue from './queue.js?v=202610261644';
-import * as coverage from './coverage.js?v=202610261644';
-import { findView } from './street.js?v=202610261644';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261644';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261644';
-import { coverageLines } from './street.js?v=202610261644';
-import { planTrip } from './directions.js?v=202610261644';
-import * as copilot from './copilot.js?v=202610261644';
-import { searchPlaces } from './api.js?v=202610261644';
-import { snapToTrack } from './geo.js?v=202610261644';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261644';
+import { pickMime } from './record.js?v=202610261651';
+import * as queue from './queue.js?v=202610261651';
+import * as coverage from './coverage.js?v=202610261651';
+import { findView } from './street.js?v=202610261651';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261651';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261651';
+import { coverageLines } from './street.js?v=202610261651';
+import { planTrip } from './directions.js?v=202610261651';
+import * as copilot from './copilot.js?v=202610261651';
+import { searchPlaces } from './api.js?v=202610261651';
+import { snapToTrack } from './geo.js?v=202610261651';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261651';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -1009,17 +1009,35 @@ const STOP_REASONS = [
   ['parking', 'Parking / done'], ['other', 'Other…'],
 ];
 
-function saveStop(code, label, words = '') {
+// quick taps above the stop reasons: when you look both ways, when you're waiting vs. going, and
+// "co-pilot is wrong", which also saves what the co-pilot was showing at that moment
+const QUICK_TAGS = [
+  ['look', 'Looking', 'left and right'], ['wait', 'Can’t go yet'], ['go', 'Going now'], ['wrong', 'Co-pilot is wrong'],
+];
+
+function saveNote(text, label, btn) {
   const c = S.chunk;
-  if (!S.capturing || !c) { toast('Start recording first: reasons are saved into the recording'); return; }
+  if (!S.capturing || !c) { toast('Start recording first: taps are saved into the recording'); return; }
   const fix = S.lastFix;
-  c.notes.push({ t: +((performance.now() - c.t0) / 1000).toFixed(2), text: `stop:${code}${words ? ` · ${words}` : ''}`.slice(0, 280),
+  c.notes.push({ t: +((performance.now() - c.t0) / 1000).toFixed(2), text: text.slice(0, 280),
     lat: fix?.lat ?? null, lng: fix?.lng ?? null });
   // the menu stays open (handy to keep up while riding); the button you tapped flashes
-  const b = document.querySelector(`#stopReasons button[data-code="${code}"]`);
-  if (b) { b.classList.remove('saved'); void b.offsetWidth; b.classList.add('saved'); }
+  if (btn) { btn.classList.remove('saved'); void btn.offsetWidth; btn.classList.add('saved'); }
   document.getElementById('stopOther').hidden = true;
   toast(`Saved: ${label}`);
+}
+
+function saveStop(code, label, words = '') {
+  saveNote(`stop:${code}${words ? ` · ${words}` : ''}`, label, document.querySelector(`#stopReasons button[data-code="${code}"]`));
+}
+
+function copilotShows() {
+  // what the co-pilot had on screen: its alert line and the band (left offsets in metres at 5/10/15 m)
+  if (!CP.on) return 'off';
+  const box = document.getElementById('copilot');
+  const alert = box.querySelector('.cp-alert').textContent.trim(), detail = box.querySelector('.cp-detail').textContent.trim();
+  const band = PB.cur ? pathNow(performance.now()).slice(1).map((y) => y.toFixed(2)).join(',') : 'none';
+  return `alert=${alert}${detail ? ` (${detail})` : ''}; band=${band}`;
 }
 
 function wireStopWhy() {
@@ -1034,6 +1052,13 @@ function wireStopWhy() {
   mini.addEventListener('click', () => {
     const on = !sheet.classList.contains('mini'); setMini(on);
     try { localStorage.setItem('waymark.stopMini', on ? '1' : '0'); } catch {}
+  });
+  const quick = document.getElementById('quickTags');
+  quick.innerHTML = QUICK_TAGS.map(([code, label, sub]) => `<button type="button" data-tag="${code}"${code === 'wrong' ? ' class="tag-wrong"' : ''}>${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ''}</button>`).join('');
+  quick.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-tag]'); if (!b) return;
+    const [code, label] = QUICK_TAGS.find((r) => r[0] === b.dataset.tag);
+    saveNote(code === 'wrong' ? `wrong:copilot · ${copilotShows()}` : `tag:${code}`, label, b);
   });
   grid.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-code]'); if (!b) return;

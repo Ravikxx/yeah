@@ -1,7 +1,7 @@
 // Turn-by-turn from the router (OSRM responses via the Waymark Worker).
 
-import { getDirections, getRoadSpeeds } from './api.js?v=202610261644';
-import { formatDistance } from './geo.js?v=202610261644';
+import { getDirections, getRoadSpeeds } from './api.js?v=202610261651';
+import { formatDistance } from './geo.js?v=202610261651';
 
 const COMPASS = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'];
 export const compass = (deg) => COMPASS[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
