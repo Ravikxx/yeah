@@ -2,13 +2,13 @@
 // on the map and matched against your footage so you can preview the trip in
 // street view, or drive it live with the matching view and turn signs.
 
-import { planTrip } from './directions.js?v=202610261633';
-import { searchPlaces } from './api.js?v=202610261633';
-import * as coverage from './coverage.js?v=202610261633';
-import * as stage from './stage.js?v=202610261633';
-import { matchPlan, findView, headingAt } from './street.js?v=202610261633';
-import { prepareTrack, atDistance, snapToTrack, distance, bearing, formatDistance, formatDuration } from './geo.js?v=202610261633';
-import { $, esc, toast, navLine, pinIcon, arrowGlyph, cueGlyph, fitPadding, turnSignHtml } from './ui.js?v=202610261633';
+import { planTrip } from './directions.js?v=202610261637';
+import { searchPlaces } from './api.js?v=202610261637';
+import * as coverage from './coverage.js?v=202610261637';
+import * as stage from './stage.js?v=202610261637';
+import { matchPlan, findView, headingAt } from './street.js?v=202610261637';
+import { prepareTrack, atDistance, snapToTrack, distance, bearing, formatDistance, formatDuration } from './geo.js?v=202610261637';
+import { $, esc, toast, navLine, pinIcon, arrowGlyph, cueGlyph, fitPadding, turnSignHtml } from './ui.js?v=202610261637';
 
 let map, layer;
 let plan = null;          // current trip
