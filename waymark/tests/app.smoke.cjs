@@ -9,14 +9,28 @@ const { chromium } = require('playwright');
   const b = await chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required'] });
   const ctx = await b.newContext({ permissions: ['geolocation', 'camera', 'microphone'], geolocation: { latitude: 40.4898, longitude: -81.4457, accuracy: 5 }, viewport: { width: 430, height: 900 } });
   const p = await ctx.newPage();
+  await p.addInitScript(() => { // like an iPhone after you tap Allow on motion access
+    if (window.DeviceOrientationEvent) DeviceOrientationEvent.requestPermission = async () => 'granted';
+    if (window.DeviceMotionEvent) DeviceMotionEvent.requestPermission = async () => 'granted';
+  });
   const errors = new Set();
   p.on('console', (m) => { if (m.type() === 'error' && /copilot/i.test(m.text())) errors.add(m.text().slice(0, 300)); });
   p.on('pageerror', (e) => errors.add(String(e).slice(0, 300)));
-  await p.goto(`${base}index.html#/drive`);
+  await p.goto(`${base}index.html?debugturn=1#/drive`);
   await p.waitForSelector('#driveStart', { timeout: 20000 });
   await p.click('#driveStart');
   await p.waitForTimeout(4000);
   await p.click('#copilotBtn');
+  // fake sensors: the compass turning right and the gyroscope reporting a turn, for ~3 s
+  await p.evaluate(() => {
+    let h = 100, n = 0;
+    const id = setInterval(() => {
+      h = (h + 0.8) % 360;
+      window.dispatchEvent(Object.assign(new Event('deviceorientation'), { webkitCompassHeading: h }));
+      window.dispatchEvent(new DeviceMotionEvent('devicemotion', { rotationRate: { alpha: 0, beta: 0, gamma: 40 }, accelerationIncludingGravity: { x: 0, y: 9.8, z: 0 } }));
+      if (++n > 150) clearInterval(id);
+    }, 20);
+  });
   let card = null;
   for (let i = 0; i < 10; i++) {
     await p.waitForTimeout(5000);
@@ -26,6 +40,7 @@ const { chromium } = require('playwright');
   console.log(JSON.stringify(card));
   await b.close();
   const bad = [...errors];
+  if (!/gyro on/.test(card.detail || '')) bad.push(`the gyroscope events never arrived (${card.detail})`);
   if (/problem/i.test(card.alert || '') || !card.ai || card.ai === '–') bad.push(`the co-pilot never produced a look (${card.alert}: ${card.detail})`);
   console.log(bad.length ? 'FAIL: ' + bad.join(' | ') : 'PASS');
   process.exit(bad.length ? 1 : 0);

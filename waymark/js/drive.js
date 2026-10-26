@@ -3,19 +3,19 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610262041';
-import * as queue from './queue.js?v=202610262041';
-import * as coverage from './coverage.js?v=202610262041';
-import { findView } from './street.js?v=202610262041';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262041';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262041';
-import { coverageLines } from './street.js?v=202610262041';
-import { planTrip } from './directions.js?v=202610262041';
-import * as copilot from './copilot.js?v=202610262041';
-import { searchPlaces } from './api.js?v=202610262041';
-import { snapToTrack } from './geo.js?v=202610262041';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262041';
-import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop } from './band.js?v=202610262041';
+import { pickMime } from './record.js?v=202610262054';
+import * as queue from './queue.js?v=202610262054';
+import * as coverage from './coverage.js?v=202610262054';
+import { findView } from './street.js?v=202610262054';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262054';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262054';
+import { coverageLines } from './street.js?v=202610262054';
+import { planTrip } from './directions.js?v=202610262054';
+import * as copilot from './copilot.js?v=202610262054';
+import { searchPlaces } from './api.js?v=202610262054';
+import { snapToTrack } from './geo.js?v=202610262054';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262054';
+import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610262054';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -247,6 +247,7 @@ function startCompass() {
   const listen = () => {
     window.addEventListener('deviceorientationabsolute', onOrient);
     window.addEventListener('deviceorientation', onOrient);
+    window.addEventListener('devicemotion', onMotion); // the gyroscope: how fast you're turning, with no lag
   };
   // iPhone asks first, and only from a tap (this runs inside the Start tap).
   if (typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -257,7 +258,24 @@ function startCompass() {
 function stopCompass() {
   window.removeEventListener('deviceorientationabsolute', onOrient);
   window.removeEventListener('deviceorientation', onOrient);
-  C.on = false; C.heading = null;
+  window.removeEventListener('devicemotion', onMotion);
+  C.on = false; C.heading = null; GY.on = false; GY.hist = []; GY.g = null;
+}
+
+// The gyroscope. The compass heading is filtered by the phone and arrives about a second after a turn starts, so
+// the band bent after the turn was over. The gyro reports the turn as it happens; its sign differs between
+// phones, so it is learned by watching it next to the compass during real turns (and remembered).
+const GY = { hist: [], g: null, on: false, calib: newCalib(), last: null };
+try { const sv = Number(localStorage.getItem('waymark.gyroSign')); if (sv) GY.calib.sum = sv * 300; } catch { /* no storage */ }
+function onMotion(e) {
+  const rr = e.rotationRate, a = e.accelerationIncludingGravity;
+  if (!rr || !a || rr.alpha == null || rr.beta == null || rr.gamma == null || a.x == null) return;
+  GY.on = true; const now = performance.now();
+  GY.g = GY.g ? { x: 0.9 * GY.g.x + 0.1 * a.x, y: 0.9 * GY.g.y + 0.1 * a.y, z: 0.9 * GY.g.z + 0.1 * a.z } : { x: a.x, y: a.y, z: a.z }; // which way is up, smoothed
+  const w = yawFromMotion({ x: rr.beta, y: rr.gamma, z: rr.alpha }, GY.g);
+  if (w == null) return;
+  GY.hist.push({ t: now, w });
+  while (GY.hist.length && now - GY.hist[0].t > 1500) GY.hist.shift();
 }
 
 function onOrient(e) {
@@ -273,7 +291,18 @@ function onOrient(e) {
 // How fast you're actually turning (degrees a second, + = right), from the compass over the last
 // second, only while moving (2+ m/s): a quick handlebar wiggle or looking around while stopped
 // doesn't count. null when unknown.
-function turnRate() { return turnRateFrom(C.hist, S.gpsSpeed ?? 0, performance.now()); }
+function turnRate() {
+  const v = S.gpsSpeed ?? 0, now = performance.now();
+  const comp = turnRateFrom(C.hist, v, now), gy = gyroTurnFrom(GY.hist, v, now, 500), gy8 = gyroTurnFrom(GY.hist, v, now, 800);
+  if (comp != null && gy8 != null) { // both see a turn: learn whether the gyro's sign matches the compass's
+    const before = calibSign(GY.calib); calibUpdate(GY.calib, gy8, comp);
+    const after = calibSign(GY.calib);
+    if (after && after !== before) { try { localStorage.setItem('waymark.gyroSign', String(after)); } catch { /* no storage */ } }
+  }
+  const sg = calibSign(GY.calib), fresh = GY.hist.length && now - GY.hist[GY.hist.length - 1].t < 300;
+  GY.last = { comp, gy, sg };
+  return sg && fresh ? sg * (gy ?? 0) || null : comp; // the gyro once its sign is known (null = wobble / no turn), else the compass
+}
 
 function lookAt(fix, gpsSpeed) {
   if (C.heading == null) return {};
@@ -986,12 +1015,18 @@ function showCopilot(r, secs) {
   const lim = limitNow(), aim = Math.min(lim, BIKE_MAX_MPH);
   const ai = Math.min(r.speed * MPH, aim);
   setCopilot({ alert, level, ai: `${Math.round(ai)} mph`, you, odds: `Limit ${lim}${CP.limit ? '' : '?'} · aim ${aim} · ${Math.round(r.slow * 100)}% slow-down`,
-    detail: `Model look ${secs.toFixed(1)} s on ${copilot.backend().detector}${stepTimes()}${CP.key ? ' · focused' : ''}${r.seen.carAhead ? ' · car ahead' : ''}${r.seen.green ? ' · green light' : ''}` });
+    detail: `Model look ${secs.toFixed(1)} s on ${copilot.backend().detector}${stepTimes()}${turnDebug()}${CP.key ? ' · focused' : ''}${r.seen.carAhead ? ' · car ahead' : ''}${r.seen.green ? ' · green light' : ''}` });
   if (level !== 'ok' && level !== 'info') say(alert.startsWith('Stop sign in') ? 'Stop sign ahead' : alert.split(':')[0]);
   else if (turn) say(`Turn ${turn}`);
 }
 
 // "(eyes 120 · cars 520 · lane 40 ms)": where one look's time went
+const DEBUG_TURN = new URLSearchParams(location.search).has('debugturn'); // add ?debugturn=1 before the # to see the sensors
+function turnDebug() {
+  if (!DEBUG_TURN) return '';
+  const f = (x) => (x == null ? '–' : Math.round(x));
+  return ` · TURN ${f(CP.rateF)}°/s (gyro ${f(GY.last?.gy)} · compass ${f(GY.last?.comp)} · sign ${GY.last?.sg ?? 0} · gyro ${GY.on ? 'on' : 'OFF'})`;
+}
 function stepTimes() {
   const t = copilot.lastTimes();
   return t ? ` (eyes ${t.eyes} · cars ${t.cars} · lane ${t.lane ?? 0} · prep ${t.prep} · trees ${t.trees} ms)` : '';

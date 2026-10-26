@@ -127,3 +127,35 @@ export function avoidCars(ys, cars, { v = 0, dists = DISTS } = {}) {
 
 // The nearest of the places the band should end (stop sign / red light / crossing car / the car ahead), or null.
 export const nearestStop = (...ds) => { const v = ds.filter((d) => d != null); return v.length ? Math.min(...v) : null; };
+
+// ---------- turning, from the gyroscope (no lag; the compass heading is filtered and arrives about a second late) ----------
+// Yaw rate (deg/s about the vertical) from the gyroscope: its rotation vector dotted with "up". "Up" is the
+// gravity direction in the phone's own axes (accelerometer, smoothed by the caller), so it doesn't matter how the
+// phone is tilted on the bars. The overall sign differs between phones and browsers, so it is learned (calibSign).
+// rot, grav: {x, y, z}.
+export function yawFromMotion(rot, grav) {
+  const n = Math.hypot(grav.x, grav.y, grav.z);
+  if (!n || n < 5) return null; // not a plausible gravity reading (free fall, or no sensor)
+  return (rot.x * grav.x + rot.y * grav.y + rot.z * grav.z) / n;
+}
+
+// Degrees a second over the last `span` ms from gyro samples [{ t (ms), w (deg/s) }], or null: too few / stale
+// samples, nearly stopped, or a wobble (a real turn keeps going the same way).
+export function gyroTurnFrom(hist, v, now, span = 500) {
+  if (!hist || v < 0.8) return null;
+  const last = hist[hist.length - 1];
+  if (!last || now - last.t > 300) return null;
+  const win = hist.filter((q) => now - q.t <= span);
+  if (win.length < 6) return null;
+  const mean = (a) => a.reduce((s, q) => s + q.w, 0) / a.length;
+  const r = mean(win), h = win.length >> 1, r1 = mean(win.slice(0, h)), r2 = mean(win.slice(h));
+  if (r1 * r2 <= 0 || Math.min(Math.abs(r1), Math.abs(r2)) < 0.5 * Math.abs(r)) return null;
+  return r;
+}
+
+// Learns whether the gyro's sign matches the compass's (+ = turning right) by watching both during real turns.
+export const newCalib = () => ({ sum: 0 });
+export function calibUpdate(c, gyro, compass) {
+  if (Math.abs(compass) > 10 && Math.abs(gyro) > 5) c.sum = clamp(c.sum + Math.sign(gyro * compass) * Math.min(Math.abs(compass), 40), -1000, 1000);
+}
+export const calibSign = (c) => (Math.abs(c.sum) >= 150 ? Math.sign(c.sum) : 0); // 0 = not sure yet: keep using the compass

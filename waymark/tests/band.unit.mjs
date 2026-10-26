@@ -57,3 +57,29 @@ console.log('PASS (obstacles)');
 a2 = avoidCars([0, 0, 0], [{ dist: 9, side: 0, moving: false }], { v: 5 });
 assert.ok(a2.stopAt == null && a2.ys[1] > 1.2, 'passes a car right in the path');
 console.log('PASS (centre)');
+
+// ---- gyroscope turning
+import { yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from '../js/band.js';
+// phone upright on the bars: gravity along the phone's y axis; a turn is a rotation about y
+assert.ok(Math.abs(yawFromMotion({ x: 0, y: 30, z: 0 }, { x: 0, y: 9.8, z: 0 }) - 30) < 1e-9, 'upright yaw');
+// tilted 40 degrees back: the same turn still reads as 30 deg/s
+const tilt = 40 * Math.PI / 180, g = { x: 0, y: 9.8 * Math.cos(tilt), z: 9.8 * Math.sin(tilt) };
+const w = { x: 0, y: 30 * Math.cos(tilt), z: 30 * Math.sin(tilt) };
+assert.ok(Math.abs(yawFromMotion(w, g) - 30) < 1e-9, 'tilt-proof');
+// pitching the phone (a bump) is not a turn
+assert.ok(Math.abs(yawFromMotion({ x: 50, y: 0, z: 0 }, { x: 0, y: 9.8, z: 0 })) < 1e-9, 'bump ignored');
+assert.equal(yawFromMotion({ x: 1, y: 1, z: 1 }, { x: 0, y: 0, z: 0.1 }), null, 'no gravity: no answer');
+// a steady 25 deg/s turn is seen within half a second; a shake that swings back and forth is not
+const steady = Array.from({ length: 20 }, (_, i) => ({ t: 1000 + i * 25, w: 25 })), now0 = 1000 + 19 * 25;
+assert.ok(Math.abs(gyroTurnFrom(steady, 3, now0) - 25) < 1e-9, 'steady turn');
+const shake = Array.from({ length: 20 }, (_, i) => ({ t: 1000 + i * 25, w: 80 * Math.sin(i * 1.1) }));
+assert.equal(gyroTurnFrom(shake, 3, now0), null, 'shake ignored');
+assert.equal(gyroTurnFrom(steady, 0.3, now0), null, 'stopped: no turn');
+assert.equal(gyroTurnFrom(steady, 3, now0 + 1000), null, 'stale samples');
+// sign calibration: opposite signs to the compass over a few real turns -> -1
+let c = newCalib(); assert.equal(calibSign(c), 0);
+for (let i = 0; i < 6; i++) calibUpdate(c, -30, 25);
+assert.equal(calibSign(c), -1, 'learns a flipped sign');
+c = newCalib(); for (let i = 0; i < 6; i++) calibUpdate(c, 30, 25); assert.equal(calibSign(c), 1);
+c = newCalib(); for (let i = 0; i < 6; i++) calibUpdate(c, 2, 25); assert.equal(calibSign(c), 0, 'tiny gyro readings teach nothing');
+console.log('PASS (gyro)');
