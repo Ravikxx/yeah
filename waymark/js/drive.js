@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261602';
-import * as queue from './queue.js?v=202610261602';
-import * as coverage from './coverage.js?v=202610261602';
-import { findView } from './street.js?v=202610261602';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261602';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261602';
-import { coverageLines } from './street.js?v=202610261602';
-import { planTrip } from './directions.js?v=202610261602';
-import * as copilot from './copilot.js?v=202610261602';
-import { searchPlaces } from './api.js?v=202610261602';
-import { snapToTrack } from './geo.js?v=202610261602';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261602';
+import { pickMime } from './record.js?v=202610261633';
+import * as queue from './queue.js?v=202610261633';
+import * as coverage from './coverage.js?v=202610261633';
+import { findView } from './street.js?v=202610261633';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261633';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261633';
+import { coverageLines } from './street.js?v=202610261633';
+import { planTrip } from './directions.js?v=202610261633';
+import * as copilot from './copilot.js?v=202610261633';
+import { searchPlaces } from './api.js?v=202610261633';
+import { snapToTrack } from './geo.js?v=202610261633';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261633';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -81,6 +81,7 @@ function wire() {
   document.getElementById('missionBtn').addEventListener('click', newMission);
   wirePlaces();
   wireCopilot();
+  wireStopWhy();
   for (const r of document.querySelectorAll('input[name="ridemode"]')) {
     r.addEventListener('change', () => {
       const mode = rideMode();
@@ -423,6 +424,7 @@ function startCapture() {
   if (!S.stream) return;
   startCompass(); // inside this tap, so iPhone can ask for motion & orientation
   S.capturing = true;
+  document.getElementById('stopWhy').hidden = false;
   S.session = Math.random().toString(36).slice(2, 10);
   S.sessionT0 = performance.now();
   S.meters = 0; S.pieces = 0; S.skipped = 0;
@@ -442,7 +444,7 @@ function startCapture() {
 function newChunk() {
   const mimeType = pickMime();
   const rec = new MediaRecorder(S.stream, { ...(mimeType && { mimeType }), videoBitsPerSecond: VIDEO_BPS });
-  const chunk = { rec, parts: [], track: [], nav: [], t0: performance.now(), startedAt: Date.now() };
+  const chunk = { rec, parts: [], track: [], nav: [], notes: [], t0: performance.now(), startedAt: Date.now() };
   // Start the piece where you are, so pieces join up on the map.
   if (S.lastFix && performance.now() - S.lastFix.at < 10000) {
     chunk.track.push({ t: 0, lat: S.lastFix.lat, lng: S.lastFix.lng, acc: S.lastFix.acc });
@@ -480,6 +482,7 @@ async function finishChunk(chunk) {
       title: '', track: chunk.track.map((p) => (p.compass == null ? [p.t, p.lat, p.lng, p.acc, p.speed ?? null, p.heading ?? null]
         : [p.t, p.lat, p.lng, p.acc, p.speed ?? null, p.heading ?? null, p.compass, p.look])),
       nav: chunk.nav,
+      notes: chunk.notes, // why you stopped ("stop:<reason>"), for training
     },
     createdAt: chunk.startedAt,
   });
@@ -488,6 +491,7 @@ async function finishChunk(chunk) {
 function stopCapture() {
   if (!S.capturing) return;
   S.capturing = false;
+  document.getElementById('stopWhy').hidden = true; document.getElementById('stopSheet').hidden = true;
   clearInterval(S.tick);
   const last = S.chunk;
   S.chunk = null;
@@ -992,6 +996,43 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } },
 };
 const backRoads = () => document.getElementById('backRoads').checked;
+
+// ---------- why you're stopping ----------
+// Your own label for a stop, saved into the recording piece at that moment (time and place) as a
+// note "stop:<reason>" (+ your words for Other). The co-pilot learns stop signs, lights and waiting
+// for traffic from these.
+const STOP_REASONS = [
+  ['stop_sign', 'Stop sign'], ['stop_sign_traffic', 'Stop sign', 'waiting for traffic'],
+  ['red_light', 'Red light'], ['yellow_light', 'Yellow light'],
+  ['yield', 'Yielding', 'to traffic'], ['car_ahead', 'Car ahead'],
+  ['person', 'Person or bike', 'crossing'], ['turning', 'Slowing to turn'],
+  ['parking', 'Parking / done'], ['other', 'Other…'],
+];
+
+function saveStop(code, label, words = '') {
+  const c = S.chunk;
+  if (!S.capturing || !c) { toast('Start recording first: reasons are saved into the recording'); return; }
+  const fix = S.lastFix;
+  c.notes.push({ t: +((performance.now() - c.t0) / 1000).toFixed(2), text: `stop:${code}${words ? ` · ${words}` : ''}`.slice(0, 280),
+    lat: fix?.lat ?? null, lng: fix?.lng ?? null });
+  document.getElementById('stopSheet').hidden = true;
+  toast(`Saved: ${label}`);
+}
+
+function wireStopWhy() {
+  const sheet = document.getElementById('stopSheet'), grid = document.getElementById('stopReasons');
+  const other = document.getElementById('stopOther'), text = document.getElementById('stopOtherText');
+  grid.innerHTML = STOP_REASONS.map(([code, label, sub]) => `<button type="button" data-code="${code}">${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ''}</button>`).join('');
+  document.getElementById('stopWhy').addEventListener('click', () => { other.hidden = true; sheet.hidden = !sheet.hidden; });
+  document.getElementById('stopClose').addEventListener('click', () => { sheet.hidden = true; });
+  grid.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-code]'); if (!b) return;
+    const [code, label, sub] = STOP_REASONS.find((r) => r[0] === b.dataset.code);
+    if (code === 'other') { other.hidden = false; text.value = ''; text.focus(); return; }
+    saveStop(code, sub ? `${label}, ${sub}` : label);
+  });
+  other.addEventListener('submit', () => { const w = text.value.trim(); if (w) saveStop('other', w, w); });
+}
 
 function wirePlaces() {
   const box = document.getElementById('backRoads');

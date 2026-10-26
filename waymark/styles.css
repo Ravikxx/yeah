@@ -1089,3 +1089,22 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
 .copilot:not([data-open]) .cp-alert { grid-column: 1 / -1; }
 .copilot:not([data-open]) .cp-odds, .copilot:not([data-open]) .cp-detail { display: none; }
 .copilot:not([data-open]) .cp-speeds b { font-size: 1.75rem; }
+
+/* Drive: tell the co-pilot why you're stopping (saved into the recording for training) */
+.stop-why {
+  display: inline-flex; align-items: center; gap: 8px; align-self: center; min-height: 44px; padding: 0 16px; border-radius: 999px;
+  border: 1px solid var(--hud-line); background: var(--hud-glass-strong); color: #fff; font: 600 var(--t-base)/1 var(--f); cursor: pointer;
+  backdrop-filter: var(--hud-blur); -webkit-backdrop-filter: var(--hud-blur);
+}
+.stop-why:active { transform: scale(.97); }
+.stop-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.stop-grid button {
+  min-height: 56px; padding: 10px 12px; border-radius: 14px; border: 0; text-align: left; cursor: pointer;
+  background: rgb(255 255 255 / .08); color: #fff; font: 600 var(--t-base)/1.2 var(--f);
+}
+.stop-grid button:active { background: var(--accent); }
+.stop-grid button small { display: block; margin-top: 3px; font-weight: 500; font-size: .8em; color: rgb(255 255 255 / .65); }
+.stop-other { display: flex; gap: 8px; }
+.stop-other input { flex: 1; min-width: 0; min-height: 48px; border-radius: 14px; padding: 0 14px; font: 500 1rem var(--f);
+  background: rgb(255 255 255 / .08); color: #fff; border: 1px solid var(--hud-line); }
+.stop-hint { margin: 0; font-size: .8rem; color: rgb(255 255 255 / .6); }
