@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261651';
-import * as queue from './queue.js?v=202610261651';
-import * as coverage from './coverage.js?v=202610261651';
-import { findView } from './street.js?v=202610261651';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261651';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261651';
-import { coverageLines } from './street.js?v=202610261651';
-import { planTrip } from './directions.js?v=202610261651';
-import * as copilot from './copilot.js?v=202610261651';
-import { searchPlaces } from './api.js?v=202610261651';
-import { snapToTrack } from './geo.js?v=202610261651';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261651';
+import { pickMime } from './record.js?v=202610261820';
+import * as queue from './queue.js?v=202610261820';
+import * as coverage from './coverage.js?v=202610261820';
+import { findView } from './street.js?v=202610261820';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261820';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261820';
+import { coverageLines } from './street.js?v=202610261820';
+import { planTrip } from './directions.js?v=202610261820';
+import * as copilot from './copilot.js?v=202610261820';
+import { searchPlaces } from './api.js?v=202610261820';
+import { snapToTrack } from './geo.js?v=202610261820';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261820';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -274,9 +274,10 @@ function onOrient(e) {
 // doesn't count. null when unknown.
 function turnRate() {
   const h = C.hist, v = S.gpsSpeed ?? 0, now = performance.now();
-  if (!h || h.length < 6 || v < 2 || now - h[h.length - 1].t > 400) return null;
-  const old = h.find((q) => now - q.t <= 1100) || h[0], dt = (h[h.length - 1].t - old.t) / 1000;
-  if (dt < 0.6) return null;
+  // slow turns count too (a bike at an intersection is often under 4 mph), and it reacts within ~0.5 s
+  if (!h || h.length < 6 || v < 0.8 || now - h[h.length - 1].t > 400) return null;
+  const old = h.find((q) => now - q.t <= 800) || h[0], dt = (h[h.length - 1].t - old.t) / 1000;
+  if (dt < 0.4) return null;
   return (((h[h.length - 1].h - old.h + 540) % 360) - 180) / dt;
 }
 
@@ -876,12 +877,14 @@ function steadyPath(r) {
   // with the lane finder the base is where your current motion takes you: straight, or, when you're
   // already turning (6+ degrees a second while moving), the arc you're on (radius = speed / turn rate)
   const rate = turnRate(), v = S.gpsSpeed ?? 0;
-  const arc = rate != null && Math.abs(rate) >= 6
-    ? (copilot.pathAhead()?.dist || [5, 10, 15]).map((d) => { const k = (rate * Math.PI / 180) / v; return Math.max(-0.8 * d, Math.min(0.8 * d, -k * d * d / 2)); })
+  const turning = rate != null && Math.abs(rate) >= 5;
+  const arc = turning
+    ? (copilot.pathAhead()?.dist || [5, 10, 15]).map((d) => { const k = (rate * Math.PI / 180) / Math.max(v, 1.5); return Math.max(-0.8 * d, Math.min(0.8 * d, -k * d * d / 2)); })
     : [0, 0, 0];
   const now = r.lane ? arc : r.path || [0, 0, 0];
   const keep = PB.steady && performance.now() - PB.steady.at < 3000;
-  const ys = keep ? now.map((y, i) => 0.5 * y + 0.5 * PB.steady.ys[i]) : now;
+  const w = turning ? 0.8 : 0.5; // while you're turning, follow the turn quickly
+  const ys = keep ? now.map((y, i) => w * y + (1 - w) * PB.steady.ys[i]) : now;
   if (r.lane) r.lane = { ...r.lane, x: keep && PB.steady.lane ? r.lane.x.map((x, i) => 0.5 * x + 0.5 * PB.steady.lane[i]) : r.lane.x };
   PB.steady = { ys, lane: r.lane?.x, at: performance.now() };
   return ys;
