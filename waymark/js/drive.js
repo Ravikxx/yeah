@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261527';
-import * as queue from './queue.js?v=202610261527';
-import * as coverage from './coverage.js?v=202610261527';
-import { findView } from './street.js?v=202610261527';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261527';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261527';
-import { coverageLines } from './street.js?v=202610261527';
-import { planTrip } from './directions.js?v=202610261527';
-import * as copilot from './copilot.js?v=202610261527';
-import { searchPlaces } from './api.js?v=202610261527';
-import { snapToTrack } from './geo.js?v=202610261527';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261527';
+import { pickMime } from './record.js?v=202610261528';
+import * as queue from './queue.js?v=202610261528';
+import * as coverage from './coverage.js?v=202610261528';
+import { findView } from './street.js?v=202610261528';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261528';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261528';
+import { coverageLines } from './street.js?v=202610261528';
+import { planTrip } from './directions.js?v=202610261528';
+import * as copilot from './copilot.js?v=202610261528';
+import { searchPlaces } from './api.js?v=202610261528';
+import { snapToTrack } from './geo.js?v=202610261528';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261528';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -763,7 +763,8 @@ function pathFrame(now) {
   const Praw = (d, y) => [ox + (vw / 2 - f * y / d) * s, oy + (vh / 2 + f * 1.1 / d) * s];
   let P = Praw;
   const { y: yAt, stopAt, opts } = pathNow(now);
-  const far = PB.cur.ds[PB.cur.ds.length - 1];
+  // with the lane finder the band reaches up to its far line (just below the horizon here: ~40 m)
+  const far = opts.lane ? 40 : PB.cur.ds[PB.cur.ds.length - 1];
   const end = Math.max(2.6, Math.min(far, stopAt ?? Infinity));
   const stopping = stopAt != null && stopAt <= far;
 
