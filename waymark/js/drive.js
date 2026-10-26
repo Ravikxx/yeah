@@ -3,19 +3,19 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610262113';
-import * as queue from './queue.js?v=202610262113';
-import * as coverage from './coverage.js?v=202610262113';
-import { findView } from './street.js?v=202610262113';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262113';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262113';
-import { coverageLines } from './street.js?v=202610262113';
-import { planTrip } from './directions.js?v=202610262113';
-import * as copilot from './copilot.js?v=202610262113';
-import { searchPlaces } from './api.js?v=202610262113';
-import { snapToTrack } from './geo.js?v=202610262113';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262113';
-import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610262113';
+import { pickMime } from './record.js?v=202610262117';
+import * as queue from './queue.js?v=202610262117';
+import * as coverage from './coverage.js?v=202610262117';
+import { findView } from './street.js?v=202610262117';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262117';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262117';
+import { coverageLines } from './street.js?v=202610262117';
+import { planTrip } from './directions.js?v=202610262117';
+import * as copilot from './copilot.js?v=202610262117';
+import { searchPlaces } from './api.js?v=202610262117';
+import { snapToTrack } from './geo.js?v=202610262117';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262117';
+import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610262117';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -845,7 +845,7 @@ function pathFrame(now) {
   const { y: yAt, stopAt, opts } = pathNow(now);
   // with the lane finder the band reaches up to its far line (just below the horizon here: ~40 m)
   const far = opts.lane ? 40 : PB.cur.ds[PB.cur.ds.length - 1];
-  const end = Math.max(2.6, Math.min(far, stopAt ?? Infinity));
+  const end = Math.max(2.6, Math.min(far, stopAt ?? Infinity, opts.reach ?? Infinity));
   const stopping = stopAt != null && stopAt <= far;
 
   // centre line and its sideways direction (so the band keeps its width through curves)
@@ -955,7 +955,7 @@ function pathOpts(r) {
   const now = performance.now(), waitCar = now - (CP.crossingAt || -1e9) < 1500;
   // the nearest place to stop: a sign, a red light, a crossing car, or the car in front (or a parked car you can't pass)
   const stopAt = nearestStop(stopIn != null ? Math.max(2.5, stopIn) : red || waitCar ? 4 : null, PB.avoid?.stopAt ?? null);
-  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1, slowing: r.slow >= 0.6 || r.speed < (S.gpsSpeed ?? 0) - 1.5 || !!PB.avoid?.slow, lane: r.path ? null : r.lane || null, rate: CP.rateF ?? 0, conf: PB.steady?.conf ?? 1 };
+  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1, slowing: r.slow >= 0.6 || r.speed < (S.gpsSpeed ?? 0) - 1.5 || !!PB.avoid?.slow, lane: r.path ? null : r.lane || null, rate: CP.rateF ?? 0, conf: PB.steady?.conf ?? 1, reach: PB.steady?.reach ?? 40 };
 }
 
 // A key moment: something's happening, so the model looks every second (as the

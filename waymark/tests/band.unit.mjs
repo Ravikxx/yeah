@@ -90,3 +90,15 @@ assert.ok(endNow == null || Math.abs(endNow) < 5, 'straightens once the turn is 
 import { smoothRate } from '../js/band.js';
 assert.ok(smoothRate(20, 0) < 11 && smoothRate(0, 20) < 6, 'falls twice as fast as it rises');
 console.log('PASS (turn ends)');
+
+// ---- the turn arc is a few metres long, not a circle that goes on for 40 m
+import { turnArc, turnReach } from '../js/band.js';
+const tight = turnArc(40, 3.6, [5, 10, 15]);                       // a hard right at 8 mph
+assert.ok(tight.every((y) => y < 0), 'right turn bends right');
+assert.ok(tight.every((y, i) => Math.abs(y) <= 0.8 * [5, 10, 15][i] + 1e-9), 'never past the sideways limit');
+assert.ok(Math.abs(tight[2]) / 15 < 1 && tight[2] > -12.0001, 'the far end is not thrown sideways');
+assert.ok(turnArc(-40, 3.6).every((y) => y > 0), 'left turn bends left');
+assert.deepEqual(turnArc(2, 3.6), [0, 0, 0], 'no turn: straight');
+assert.equal(turnReach(0, 5), 40, 'full length on a straight');
+assert.ok(turnReach(40, 3.6) <= 9, 'short while turning hard');
+console.log('PASS (arc)');

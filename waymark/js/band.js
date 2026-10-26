@@ -38,13 +38,22 @@ export const turnStrength = (rate) => clamp((Math.abs(rate) - 4) / 8, 0, 1);
 // picture is the road you're leaving).
 export const laneWeight = (rate) => clamp(1 - (Math.abs(rate) - 6) / 20, 0, 1);
 
-// The arc you're on (radius = speed / turn rate), as left offsets at the given distances.
+// The arc you're on (radius = speed / turn rate), as left offsets at the given distances. A turn is a few
+// metres long, not a circle that goes on for 40 m: the arc is followed for 40 degrees of turning, then the
+// path carries straight on along that heading.
 export function turnArc(rate, v, dists = DISTS) {
   const s = turnStrength(rate);
   if (!s) return dists.map(() => 0);
-  const k = (rate * Math.PI / 180) / Math.max(v, 1.5);
-  return dists.map((d) => s * clamp(-k * d * d / 2, -0.8 * d, 0.8 * d));
+  const R = Math.max(v, 1.5) / Math.abs(rate * Math.PI / 180), PHI = 40 * Math.PI / 180, xm = R * Math.sin(PHI), sgn = rate > 0 ? -1 : 1; // right turn = negative (left +)
+  return dists.map((d) => {
+    const y = d <= xm ? R * (1 - Math.cos(Math.asin(d / R))) : R * (1 - Math.cos(PHI)) + (d - xm) / Math.cos(PHI) * Math.sin(PHI);
+    return s * sgn * Math.min(y, 0.8 * d);
+  });
 }
+
+// How far ahead the band is drawn: all the way (40 m) on a straight, only about 1.5 s of riding while you're
+// turning hard (nobody knows where the road goes beyond the turn).
+export const turnReach = (rate, v) => 40 - turnStrength(rate) * (40 - clamp(1.5 * v + 3, 5, 12));
 
 // st: what this returned last time (null at the start).
 // in: { now (ms), v (m/s), rate (smoothed deg/s), path (driver model or null), lane ({x:[near,mid,far]} or null),
@@ -89,7 +98,8 @@ export function planBand(st, { now, v, rate, path, lane, route = null, dists = D
     pen += clamp((gap - 1.5) / 6, 0, 0.65);       // the further apart, the fainter
   }
   const conf = clamp(0.7 * (st?.conf ?? 1) + 0.3 * (1 - pen), 0.35, 1);
-  return { ys, laneX, conf, state: { ys, lane: laneX, at: now, conf, lookId } };
+  const want = planned ? 40 : turnReach(rate, v), reach = keep && st.reach != null ? 0.5 * want + 0.5 * st.reach : want;
+  return { ys, laneX, conf, reach, state: { ys, lane: laneX, at: now, conf, lookId, reach } };
 }
 
 // ---------- obstacles and rules: they change where the band goes, not just what the text says ----------
