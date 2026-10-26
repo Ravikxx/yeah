@@ -543,7 +543,10 @@ export async function look(video, state) {
   S.recent = [...S.recent.filter((q) => t - q.t <= 2), { t, emb, dets: ds, look: lk }];
   const pic = summary(x);
   const p = predictRow(x, pic);
-  p.path = predictPath(x, state.map, state.speed, pic);
+  // the driver's path only with directions: it learned with the map's road shape, and without it its
+  // guesses wander (the band then goes straight ahead, bent only by the lane finder)
+  p.path = state.map ? predictPath(x, state.map, state.speed, pic) : null;
+  if (p.path && state.map.slice(0, 3).every((v) => v != null && Math.abs(v) < 0.5)) p.path = p.path.map((y) => 0.3 * y); // map says straight: damp the wobble
   p.lane = await laneLook(video, W, H);
   // follow the directions when a turn is under 30 m away (as in training)
   const nv = x.slice(-10);

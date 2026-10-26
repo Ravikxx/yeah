@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261513';
-import * as queue from './queue.js?v=202610261513';
-import * as coverage from './coverage.js?v=202610261513';
-import { findView } from './street.js?v=202610261513';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261513';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261513';
-import { coverageLines } from './street.js?v=202610261513';
-import { planTrip } from './directions.js?v=202610261513';
-import * as copilot from './copilot.js?v=202610261513';
-import { searchPlaces } from './api.js?v=202610261513';
-import { snapToTrack } from './geo.js?v=202610261513';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261513';
+import { pickMime } from './record.js?v=202610261526';
+import * as queue from './queue.js?v=202610261526';
+import * as coverage from './coverage.js?v=202610261526';
+import { findView } from './street.js?v=202610261526';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261526';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261526';
+import { coverageLines } from './street.js?v=202610261526';
+import { planTrip } from './directions.js?v=202610261526';
+import * as copilot from './copilot.js?v=202610261526';
+import { searchPlaces } from './api.js?v=202610261526';
+import { snapToTrack } from './geo.js?v=202610261526';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261526';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -643,6 +643,9 @@ async function loopCopilot() {
     CP.crossingAt = cars.some((c) => c.crossing) ? now : CP.crossingAt;
     CP.closingAt = cars.some((c) => c.closingIn) ? now : CP.closingAt;
     CP.movingAt = cars.some((c) => c.moving) ? now : CP.movingAt;
+    // the nearest car in your lane ahead (moving or not), within 25 m
+    const ahead = cars.filter((c) => Math.abs(c.side) < 1.6 && c.dist < 25).sort((a, b) => a.dist - b.dist)[0];
+    if (ahead) { CP.aheadAt = now; CP.aheadDist = ahead.dist; }
   };
   while (CP.on) {
     const t0 = performance.now(); let op = 'track';
@@ -651,7 +654,7 @@ async function loopCopilot() {
         const key = CP.key = keyMoment(last);
         if (t0 >= nextFull) { op = 'look';
           last = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null, limit: limitNow(), map: mapAhead(), speed: S.gpsSpeed ?? 0 });
-          drawPath(last.path, pathOpts(last));
+          drawPath(steadyPath(last), pathOpts(last));
           const done = performance.now();
           CP.secs = (done - t0) / 1000; lastDet = done; feed(last, done);
           // key moments: a look every second. Otherwise looks in pairs 1 s apart (so the model's
@@ -843,6 +846,17 @@ function pathFrame(now) {
   PB.raf = requestAnimationFrame(pathFrame);
 }
 
+// Smooth the path and the lane finder from look to look (half the new, half the last), so one odd
+// look can't throw the band around. No directions: straight ahead (the lane finder still bends it).
+function steadyPath(r) {
+  const now = r.path || [0, 0, 0];
+  const keep = PB.steady && performance.now() - PB.steady.at < 3000;
+  const ys = keep ? now.map((y, i) => 0.5 * y + 0.5 * PB.steady.ys[i]) : now;
+  if (r.lane) r.lane = { ...r.lane, x: keep && PB.steady.lane ? r.lane.x.map((x, i) => 0.5 * x + 0.5 * PB.steady.lane[i]) : r.lane.x };
+  PB.steady = { ys, lane: r.lane?.x, at: performance.now() };
+  return ys;
+}
+
 // Where the path should end (a stop it plans), whether the AI wants to go faster than you are,
 // and whether it's slowing (for the chevrons).
 function pathOpts(r) {
@@ -893,13 +907,22 @@ function showCopilot(r, secs) {
   const now = performance.now();
   r.seen.carCrossing = now - (CP.crossingAt || -1e9) < 1500; // from the tracker; hold the alert 1.5 s
   r.seen.carClosing = now - (CP.closingAt || -1e9) < 1500;
+  // a car in your lane ahead: from the tracker (with its distance), or the detector's car-ahead check
+  const aheadM = now - (CP.aheadAt || -1e9) < 1500 ? CP.aheadDist : r.seen.carAhead ? null : undefined;
+  const v = S.gpsSpeed ?? 0, aheadFt = aheadM != null ? Math.round(aheadM * 3.281 / 5) * 5 : null;
+  const carAhead = aheadM === undefined ? null
+    : v < 0.5 && (aheadM == null || aheadM < 12) ? ['Car ahead: wait', 'info']
+    : aheadM != null && (aheadM < 8 || aheadM / Math.max(v, 0.1) < 2) ? [`Car ahead · ${aheadFt} ft: slow down`, 'slow']
+    : [aheadFt != null ? `Car ahead · ${aheadFt} ft` : 'Car ahead', 'info'];
   const [alert, level] = r.seen.red || redFar ? ['Red light: stop', 'stop']
     : stopIn != null && stopIn < 10 ? ['Stop sign: stop', 'stop']
     : stopIn != null ? [`Stop sign in ${Math.round(stopIn * 3.281 / 5) * 5} ft`, 'slow']
     : r.seen.carCrossing ? ['Car crossing: wait', 'stop']
     : r.seen.carClosing ? ['Car ahead getting close: slow down', 'slow']
+    : carAhead && carAhead[1] === 'slow' ? carAhead
     : r.seen.stop ? ['Stop sign: slow down', 'slow']
     : r.slow >= 0.6 ? ['Slow down', 'slow']
+    : carAhead ? carAhead
     : turn ? [`Turn ${turn} coming`, 'info']
     : ['Clear', 'ok'];
   // never faster than the speed limit or what your bike can do
