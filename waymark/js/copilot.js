@@ -16,7 +16,7 @@
 // directions, plus the road's shape ahead from the directions' route line and your speed.
 
 const ORT = new URL('../ai/ort/', import.meta.url).href; // onnxruntime-web 1.20.1, hosted here (multi-core mode can't load its helpers from another site)
-const FILES = { resnet: 'ai/model/resnet18.onnx', detector: 'ai/model/detector.onnx', trees: 'ai/model/model.json?v=4', path: 'ai/model/path.json?v=1' }; // bump ?v= when retrained
+const FILES = { resnet: 'ai/model/resnet18.onnx', detector: 'ai/model/detector.onnx', trees: 'ai/model/model.json?v=4', path: 'ai/model/path.json?v=2' }; // bump ?v= when retrained
 const CACHE = 'waymark-copilot-v2';
 const COCO = { 13: 'stop', 10: 'light', 3: 'car', 8: 'car', 6: 'car', 4: 'car' };
 const CROP = 0.72, MEAN = [0.485, 0.456, 0.406], STD = [0.229, 0.224, 0.225];
