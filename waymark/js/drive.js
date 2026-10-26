@@ -698,59 +698,140 @@ function mapAhead() {
   });
 }
 
-// Draws the driver's path on the camera view like Tesla's FSD (v13) screen: a solid glowing blue band
-// (deeper blue where the AI wants to speed up), ending where it plans to stop, with a white stop line there.
+// The driver's path on the camera view, in the style of Tesla's FSD screen: a glowing blue band
+// that runs from your wheel into the distance (light sky blue near you, deep blue far away, fading
+// at its tip), a white stop line where it plans to stop, and chevrons flowing toward you when it's
+// slowing. It's redrawn every frame: a new path from the model glides in over ~0.4 s, and between
+// looks the band slides toward you as you ride (so it stays on the road instead of jumping).
 // The phone sits on the handlebars ~1.1 m up, looking level: a point d m ahead is f·1.1/d below the middle.
-// path: left offsets (m) at 5, 10, 15 m; opts: { stopAt (m) or null, faster (bool) }
+const PB = { cur: null, old: null, raf: 0, cv: null, g: null, size: '' };
+const PB_GLIDE = 400; // ms for a new path to glide in
+
+// path: left offsets (m) at 5, 10, 15 m; opts: { stopAt (m) or null, faster, slowing }
 function drawPath(path, opts = {}) {
-  let cv = document.getElementById('cpPath');
-  if (!path || !CP.on || !el.dcam?.videoWidth) { if (cv) cv.hidden = true; return; }
-  if (!cv) { cv = document.createElement('canvas'); cv.id = 'cpPath'; cv.className = 'cp-path'; el.dcam.after(cv); }
+  if (!path || !CP.on) {
+    cancelAnimationFrame(PB.raf); PB.raf = 0; PB.cur = PB.old = null;
+    if (PB.cv) PB.cv.hidden = true;
+    return;
+  }
+  const now = performance.now();
+  PB.old = PB.cur ? { ...PB.cur, frozen: pathNow(now) } : null;
+  PB.cur = { ys: [0, ...path], ds: [2, ...copilot.pathAhead().dist], t: now, opts };
+  if (!PB.raf) PB.raf = requestAnimationFrame(pathFrame);
+}
+
+// one path's centre line as a function of distance ahead, slid toward you by how far you've ridden since
+function pathFn(p, now) {
+  const moved = Math.min(10, (S.gpsSpeed ?? 0) * (now - p.t) / 1000);
+  const { ds, ys } = p;
+  return (d0) => {
+    const d = Math.min(ds[ds.length - 1], d0 + moved);
+    const i = Math.min(ds.length - 2, Math.max(0, ds.findIndex((x, k) => d <= ds[k + 1])));
+    const u = (d - ds[i]) / (ds[i + 1] - ds[i]);
+    const y0 = ys[Math.max(0, i - 1)], y1 = ys[i], y2 = ys[i + 1], y3 = ys[Math.min(ys.length - 1, i + 2)];
+    return 0.5 * (2 * y1 + (-y0 + y2) * u + (2 * y0 - 5 * y1 + 4 * y2 - y3) * u * u + (-y0 + 3 * y1 - 3 * y2 + y3) * u * u * u); // Catmull-Rom
+  };
+}
+
+// what's on screen now: the new path blended in over the old one
+function pathNow(now) {
+  const c = PB.cur, o = PB.old;
+  const fc = pathFn(c, now), stopC = c.opts.stopAt != null ? c.opts.stopAt - (S.gpsSpeed ?? 0) * (now - c.t) / 1000 : null;
+  const w = o ? Math.min(1, (now - c.t) / PB_GLIDE) : 1, e = w * w * (3 - 2 * w); // smoothstep
+  if (e >= 1) return { y: fc, stopAt: stopC, opts: c.opts };
+  const fo = o.frozen.y;
+  const stopO = o.frozen.stopAt;
+  const stopAt = stopC == null ? (e < 0.5 ? stopO : null) : stopO == null ? stopC : stopO + (stopC - stopO) * e;
+  return { y: (d) => fo(d) + (fc(d) - fo(d)) * e, stopAt, opts: c.opts };
+}
+
+function pathFrame(now) {
+  PB.raf = 0;
+  if (!PB.cur || !CP.on || !el.dcam?.videoWidth) { if (PB.cv) PB.cv.hidden = true; return; }
+  if (!PB.cv) { PB.cv = document.createElement('canvas'); PB.cv.id = 'cpPath'; PB.cv.className = 'cp-path'; el.dcam.after(PB.cv); PB.g = PB.cv.getContext('2d'); }
+  const cv = PB.cv, g = PB.g, dpr = Math.min(3, devicePixelRatio || 1);
   const ew = el.dcam.clientWidth, eh = el.dcam.clientHeight, vw = el.dcam.videoWidth, vh = el.dcam.videoHeight;
-  cv.width = ew * devicePixelRatio; cv.height = eh * devicePixelRatio; cv.hidden = false;
-  const g = cv.getContext('2d'); g.scale(devicePixelRatio, devicePixelRatio);
+  const size = `${ew}x${eh}x${dpr}`;
+  if (PB.size !== size) { cv.width = Math.round(ew * dpr); cv.height = Math.round(eh * dpr); PB.size = size; }
+  cv.hidden = false;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, ew, eh);
   const s = Math.max(ew / vw, eh / vh), ox = (ew - vw * s) / 2, oy = (eh - vh * s) / 2; // object-fit: cover
   const f = vw / 2 / Math.tan(hfov() * Math.PI / 360);
   const P = (d, y) => [ox + (vw / 2 - f * y / d) * s, oy + (vh / 2 + f * 1.1 / d) * s];
-  // smooth centre line through (2 m, 0) and the model's points, sampled every half metre
-  const ds = [2, ...copilot.pathAhead().dist], ys = [0, ...path];
-  const yAt = (d) => {
-    const i = Math.min(ds.length - 2, Math.max(0, ds.findIndex((x, k) => d <= ds[k + 1])));
-    const u = (d - ds[i]) / (ds[i + 1] - ds[i]), y0 = ys[Math.max(0, i - 1)], y1 = ys[i], y2 = ys[i + 1], y3 = ys[Math.min(ys.length - 1, i + 2)];
-    return 0.5 * (2 * y1 + (-y0 + y2) * u + (2 * y0 - 5 * y1 + 4 * y2 - y3) * u * u + (-y0 + 3 * y1 - 3 * y2 + y3) * u * u * u); // Catmull-Rom
-  };
-  const end = Math.max(3, Math.min(ds[ds.length - 1], opts.stopAt ?? Infinity));
-  // FSD v13 style: a solid, saturated blue band with a lighter glowing core, crisp edges, fading
-  // only at its tip (deeper blue when the AI wants to speed up)
-  const band = (half, color, alphaNear) => {
-    const L = [], R = [];
-    for (let d = 2; d <= end + 1e-6; d += 0.5) { const y = yAt(d); L.push(P(d, y + half)); R.push(P(d, y - half)); }
-    const near = P(2, 0)[1], far = P(end, yAt(end))[1];
-    const grad = g.createLinearGradient(0, near, 0, far);
-    grad.addColorStop(0, `rgba(${color}, ${alphaNear})`);
-    grad.addColorStop(0.8, `rgba(${color}, ${alphaNear})`);
-    grad.addColorStop(1, `rgba(${color}, 0)`);
-    g.fillStyle = grad;
-    g.beginPath(); [...L, ...R.reverse()].forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.fill();
-  };
-  g.shadowColor = 'rgba(40, 140, 255, 0.9)'; g.shadowBlur = 14;
-  band(0.32, opts.faster ? '10, 105, 255' : '30, 128, 255', 0.95); // the band
-  g.shadowBlur = 0;
-  band(0.1, '150, 205, 255', 0.35);                                 // its lighter core
-  if (opts.stopAt != null && opts.stopAt <= ds[ds.length - 1]) { // where it plans to stop: a white line across
-    const y = yAt(end), a = P(end, y + 1.6), b = P(end, y - 1.6);
-    g.strokeStyle = 'rgba(255, 255, 255, 0.92)'; g.lineWidth = Math.max(3, 0.25 * f * s / end); g.lineCap = 'round';
-    g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.stroke();
+  const { y: yAt, stopAt, opts } = pathNow(now);
+  const far = PB.cur.ds[PB.cur.ds.length - 1];
+  const end = Math.max(2.6, Math.min(far, stopAt ?? Infinity));
+  const stopping = stopAt != null && stopAt <= far;
+
+  // centre line and its sideways direction (so the band keeps its width through curves)
+  const D0 = 1.5; // the band starts just past the handlebars and fades in
+  const C = [];
+  for (let d = D0; d <= end + 1e-6; d += 0.2) {
+    const y = yAt(Math.max(2, d)), dy = (yAt(Math.min(end, Math.max(2, d) + 0.25)) - yAt(Math.max(2, d - 0.25))) / 0.5, n = Math.hypot(1, dy);
+    C.push({ d, y, nx: -dy / n, ny: 1 / n });
   }
+  const edge = (half) => {
+    const L = C.map((c) => P(c.d + half * c.nx, c.y + half * c.ny)), R = C.map((c) => P(c.d - half * c.nx, c.y - half * c.ny));
+    g.beginPath(); [...L, ...R.reverse()].forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath();
+  };
+  // colour runs along the band: screen height maps to distance, so stops are placed by distance
+  const yNear = P(D0, 0)[1], yFar = P(end, 0)[1];
+  const at = (d) => Math.min(1, Math.max(0, (P(d, 0)[1] - yNear) / ((yFar - yNear) || 1)));
+  const fadeFrom = stopping ? Math.max(D0 + 0.8, end - 1.2) : end * 0.6;
+  const lengthwise = (rgb, a) => {
+    const gr = g.createLinearGradient(0, yNear, 0, yFar), c = `${rgb[0]}, ${rgb[1]}, ${rgb[2]}`;
+    gr.addColorStop(0, `rgba(${c}, 0)`); gr.addColorStop(at(D0 + 0.7), `rgba(${c}, ${a})`); // fade in at your wheel
+    gr.addColorStop(at(fadeFrom), `rgba(${c}, ${a})`); gr.addColorStop(1, `rgba(${c}, 0)`);  // fade out at its tip
+    return gr;
+  };
+  const mix = (p, q, t) => p.map((v, i) => Math.round(v + (q[i] - v) * t));
+  const deep = opts.faster ? [16, 86, 245] : [28, 104, 250], sky = [120, 196, 255], ice = [232, 246, 255];
+
+  // 1) a soft halo of light around the band
+  g.save(); g.shadowColor = 'rgba(46, 140, 255, 0.9)'; g.shadowBlur = 26;
+  edge(0.33); g.fillStyle = lengthwise(deep, 0.55); g.fill(); g.restore();
+  // 2) the band: layers from the edge inwards, deep blue at its edges blending to bright sky blue in the
+  //    middle, so it reads as one smooth glowing surface (no stripes)
+  const N = 16;
+  for (let k = 0; k < N; k++) {
+    const t = k / (N - 1), half = 0.32 - 0.27 * t;
+    edge(half); g.fillStyle = lengthwise(mix(deep, sky, t), 0.27); g.fill();
+  }
+  // 3) a thin glassy highlight down the middle
+  edge(0.035); g.fillStyle = lengthwise(ice, 0.55); g.fill();
+
+  // 4) slowing: chevrons on the band flowing toward you (Tesla shows these when it slows)
+  if (opts.slowing || stopping) {
+    const span = Math.max(0, end - 3), phase = (now / 900) % 1;
+    for (let k = 0; k < 4; k++) {
+      const d = end - ((k + phase) / 4) * span;
+      if (d < 3 || d > end - 0.3) continue;
+      const c = C[Math.min(C.length - 1, Math.max(0, Math.round((d - D0) / 0.2)))];
+      const tip = P(c.d - 0.3, c.y), l = P(c.d + 0.2, c.y + 0.22), r = P(c.d + 0.2, c.y - 0.22); // a 'v' pointing at you
+      const a = Math.min(1, (end - d) / 2) * Math.min(1, (d - 3) / 1.5) * 0.85;
+      g.strokeStyle = `rgba(255, 255, 255, ${a})`; g.lineWidth = Math.max(1.5, 0.07 * f * s / d); g.lineJoin = g.lineCap = 'round';
+      g.beginPath(); g.moveTo(...l); g.lineTo(...tip); g.lineTo(...r); g.stroke();
+    }
+  }
+
+  // 5) where it plans to stop: a glowing white line across the road
+  if (stopping) {
+    const y = yAt(end), a = P(end, y + 1.5), b = P(end, y - 1.5);
+    g.save(); g.shadowColor = 'rgba(255, 255, 255, 0.9)'; g.shadowBlur = 12;
+    g.strokeStyle = 'rgba(255, 255, 255, 0.95)'; g.lineWidth = Math.max(3, 0.22 * f * s / end); g.lineCap = 'round';
+    g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.stroke(); g.restore();
+  }
+  PB.raf = requestAnimationFrame(pathFrame);
 }
 
-// Where the path should end (a stop it plans) and whether the AI wants to go faster than you are.
+// Where the path should end (a stop it plans), whether the AI wants to go faster than you are,
+// and whether it's slowing (for the chevrons).
 function pathOpts(r) {
   const stopIn = stopAhead();
   const red = r.seen?.red || (CP.light && performance.now() - CP.light.at < 4000 && CP.light.red);
   const now = performance.now(), waitCar = now - (CP.crossingAt || -1e9) < 1500;
   const stopAt = stopIn != null ? Math.max(2.5, stopIn) : red || waitCar ? 4 : null;
-  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1 };
+  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1, slowing: r.slow >= 0.6 || r.speed < (S.gpsSpeed ?? 0) - 1.5 };
 }
 
 // A key moment: something's happening, so the model looks every second (as the
