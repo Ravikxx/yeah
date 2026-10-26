@@ -32,19 +32,22 @@ const { chromium } = require('playwright');
     }, 20);
   });
   let card = null;
-  for (let i = 0; i < 10; i++) {
-    await p.waitForTimeout(i ? 1500 : 10000);
+  for (let i = 0; i < 40; i++) { // wait for the first look (the models load first)
+    await p.waitForTimeout(2000);
     card = await p.evaluate(() => ({ alert: document.querySelector('#copilot .cp-alert')?.textContent, detail: document.querySelector('#copilot .cp-detail')?.textContent, ai: document.querySelector('#copilot .cp-ai')?.textContent }));
     if (card.ai && card.ai !== '–') break;
   }
+  const laneCount = () => p.evaluate(() => Number((/lane updates (\d+)/.exec(document.getElementById('turnDbg')?.textContent || '') || [])[1] || 0));
+  const n0 = await laneCount(); await p.waitForTimeout(10000); const n1 = await laneCount();
+  card = await p.evaluate(() => ({ alert: document.querySelector('#copilot .cp-alert')?.textContent, detail: document.querySelector('#copilot .cp-detail')?.textContent, ai: document.querySelector('#copilot .cp-ai')?.textContent }));
   console.log(JSON.stringify(card));
   const dbg = await p.evaluate(() => document.getElementById('turnDbg')?.textContent || '');
   await b.close();
   const bad = [...errors];
-  const laneN = Number((/lane updates (\d+)/.exec(dbg) || [])[1] || 0);
-  console.log('lane finder updates in ~10 s:', laneN);
-  if (laneN < 10) bad.push(`the band's lane finder only updated ${laneN} times in ~10 s (it should run several times a second)`);
-  if (!/gyro on/.test(card.detail || '')) bad.push(`the gyroscope events never arrived (${card.detail})`);
+  const laneN = n1 - n0;
+  console.log('lane finder updates in 10 s:', laneN);
+  if (laneN < 10) bad.push(`the band's lane finder only updated ${laneN} times in 10 s (it should run several times a second)`);
+  if (!/gyro on/.test(dbg)) bad.push(`the gyroscope events never arrived (${card.detail})`);
   if (/problem/i.test(card.alert || '') || !card.ai || card.ai === '–') bad.push(`the co-pilot never produced a look (${card.alert}: ${card.detail})`);
   console.log(bad.length ? 'FAIL: ' + bad.join(' | ') : 'PASS');
   process.exit(bad.length ? 1 : 0);
