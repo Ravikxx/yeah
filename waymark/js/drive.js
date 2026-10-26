@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261821';
-import * as queue from './queue.js?v=202610261821';
-import * as coverage from './coverage.js?v=202610261821';
-import { findView } from './street.js?v=202610261821';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261821';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261821';
-import { coverageLines } from './street.js?v=202610261821';
-import { planTrip } from './directions.js?v=202610261821';
-import * as copilot from './copilot.js?v=202610261821';
-import { searchPlaces } from './api.js?v=202610261821';
-import { snapToTrack } from './geo.js?v=202610261821';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261821';
+import { pickMime } from './record.js?v=202610261900';
+import * as queue from './queue.js?v=202610261900';
+import * as coverage from './coverage.js?v=202610261900';
+import { findView } from './street.js?v=202610261900';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261900';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261900';
+import { coverageLines } from './street.js?v=202610261900';
+import { planTrip } from './directions.js?v=202610261900';
+import * as copilot from './copilot.js?v=202610261900';
+import { searchPlaces } from './api.js?v=202610261900';
+import { snapToTrack } from './geo.js?v=202610261900';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261900';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -621,6 +621,13 @@ function wireCopilot() {
 
 async function startCopilot() {
   CP.on = true;
+  // the AI looks every 1-3 s, but the compass is read many times a second: between looks, keep the band's
+  // turn arc live (a U-turn takes about 3 s, shorter than the gap between looks)
+  clearInterval(CP.arcTimer);
+  CP.arcTimer = setInterval(() => {
+    if (!CP.on || !CP.lastR || turnRate() == null) return;
+    drawPath(steadyPath({ ...CP.lastR }), pathOpts(CP.lastR));
+  }, 100);
   startCompass(); // inside the tap, so iPhone can ask for motion access
   const btn = document.getElementById('copilotBtn'), box = document.getElementById('copilot');
   btn.setAttribute('aria-pressed', 'true'); box.hidden = false;
@@ -636,7 +643,7 @@ async function startCopilot() {
 }
 
 function stopCopilot() {
-  CP.on = false;
+  CP.on = false; clearInterval(CP.arcTimer); CP.lastR = null;
   document.getElementById('copilotBtn')?.setAttribute('aria-pressed', 'false');
   const box = document.getElementById('copilot'); if (box) box.hidden = true;
   drawPath(null);
@@ -675,6 +682,7 @@ async function loopCopilot() {
         const key = CP.key = keyMoment(last);
         if (t0 >= nextFull) { op = 'look';
           last = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null, limit: limitNow(), map: mapAhead(), speed: S.gpsSpeed ?? 0 });
+          CP.lastR = last;
           drawPath(steadyPath(last), pathOpts(last));
           const done = performance.now();
           CP.secs = (done - t0) / 1000; lastDet = done; feed(last, done);

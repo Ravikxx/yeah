@@ -2,13 +2,13 @@
 // (bottom sheet on phones) with Explore / Directions / Routes / Mine, and the
 // Drive & capture button.
 
-import * as coverage from './coverage.js?v=202610261821';
-import * as queue from './queue.js?v=202610261821';
-import * as nav from './nav.js?v=202610261821';
-import { showRoutes, wireNearMe, showFootage, renderQueueLine, wireExport } from './routes.js?v=202610261821';
-import { coverageLines, coveredLength, findView } from './street.js?v=202610261821';
-import { $, esc, makeMap, drawCoverage, dotIcon } from './ui.js?v=202610261821';
-import { formatDistance } from './geo.js?v=202610261821';
+import * as coverage from './coverage.js?v=202610261900';
+import * as queue from './queue.js?v=202610261900';
+import * as nav from './nav.js?v=202610261900';
+import { showRoutes, wireNearMe, showFootage, renderQueueLine, wireExport } from './routes.js?v=202610261900';
+import { coverageLines, coveredLength, findView } from './street.js?v=202610261900';
+import { $, esc, makeMap, drawCoverage, dotIcon } from './ui.js?v=202610261900';
+import { formatDistance } from './geo.js?v=202610261900';
 
 const VIEW_KEY = 'waymark.view.v1';
 let map, covLayer, navLayer, pinsLayer, meMarker;
