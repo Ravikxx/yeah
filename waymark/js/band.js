@@ -29,7 +29,8 @@ export function turnRateFrom(hist, v, now) {
 
 // Rises and falls gradually, and decays to 0 when the compass says nothing: the band never flips between
 // "turning" and "not".
-export const smoothRate = (prev, tr) => (prev ?? 0) * 0.75 + (tr ?? 0) * 0.25;
+// Eases in at 25% a step and out at 50%: the band straightens quickly once the turn is over.
+export const smoothRate = (prev, tr) => { const p = prev ?? 0, t = tr ?? 0, k = Math.abs(t) < Math.abs(p) ? 0.5 : 0.25; return p * (1 - k) + t * k; };
 
 // 0 below 4 deg/s, full from 12.
 export const turnStrength = (rate) => clamp((Math.abs(rate) - 4) / 8, 0, 1);
@@ -150,7 +151,8 @@ export function gyroTurnFrom(hist, v, now, span = 500) {
   const mean = (a) => a.reduce((s, q) => s + q.w, 0) / a.length;
   const r = mean(win), h = win.length >> 1, r1 = mean(win.slice(0, h)), r2 = mean(win.slice(h));
   if (r1 * r2 <= 0 || Math.min(Math.abs(r1), Math.abs(r2)) < 0.5 * Math.abs(r)) return null;
-  return r;
+  const recent = hist.filter((q) => now - q.t <= 150); // the latest 150 ms: what the turn is doing right now
+  return recent.length >= 3 ? mean(recent) : r;
 }
 
 // Learns whether the gyro's sign matches the compass's (+ = turning right) by watching both during real turns.

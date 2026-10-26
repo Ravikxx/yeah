@@ -115,11 +115,19 @@ async function runResnet(feeds) {
     return R.run(feeds);
   }
 }
-const cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+// Canvases are made ONCE and reused. A fresh canvas per look (several a second now) made iPhones run out of
+// memory and crash the page; changing a canvas's size every call also reallocates it, so a size is only set when it differs.
+const sizeTo = (c, w, h) => { if (c.width !== w) c.width = w; if (c.height !== h) c.height = h; };
+const mk = (w = 1, h = 1) => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d', { willReadFrequently: true }); g.imageSmoothingQuality = 'high'; return [c, g]; };
+const [cv, cx] = mk();          // the full camera frame (look, tracker, detector)
+const [zcv, zcx] = mk();        // the zoomed sign crop
+const [eCv, eCx] = mk(224, 224); // the picture network's 224 x 224 input
+const [lCv, lCx] = mk(240, 96);  // the lane finder's road band
+const laneBuf = new Float32Array(3 * 240 * 96);
 
 function grab(video) {
   const W = video.videoWidth, H = video.videoHeight;
-  cv.width = W; cv.height = H; cx.drawImage(video, 0, 0, W, H);
+  sizeTo(cv, W, H); cx.drawImage(video, 0, 0, W, H);
   return { W, H, px: cx.getImageData(0, 0, W, H).data };
 }
 
@@ -127,10 +135,8 @@ function grab(video) {
 function embedFeeds(video, W, H) {
   const ch = Math.round(H * CROP), s = 256 / Math.min(W, ch);
   const rw = Math.round(W * s), rh = Math.round(ch * s);
-  const c = document.createElement('canvas'); c.width = 224; c.height = 224;
-  const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
-  g.drawImage(video, 0, 0, W, ch, -(rw - 224) / 2, -(rh - 224) / 2, rw, rh);
-  const p = g.getImageData(0, 0, 224, 224).data, n = 224 * 224, x = new Float32Array(3 * n);
+  eCx.drawImage(video, 0, 0, W, ch, -(rw - 224) / 2, -(rh - 224) / 2, rw, rh);
+  const p = eCx.getImageData(0, 0, 224, 224).data, n = 224 * 224, x = new Float32Array(3 * n);
   for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) x[k * n + i] = (p[i * 4 + k] / 255 - MEAN[k]) / STD[k];
   return { image: new ort.Tensor('float32', x, [1, 3, 224, 224]) };
 }
@@ -147,9 +153,8 @@ function laneInput(video, W, H) {
   let cw = W, ch = H;
   if (W / H > 0.75) cw = Math.round(H * 0.75); else ch = Math.round(W / 0.75);
   const cx = (W - cw) / 2, cy = (H - ch) / 2;
-  const c = document.createElement('canvas'); c.width = 240; c.height = 96;
-  const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(video, cx, cy + 0.44 * ch, cw, 0.30 * ch, 0, 0, 240, 96);
-  const p = g.getImageData(0, 0, 240, 96).data, n = 240 * 96, x = new Float32Array(3 * n);
+  lCx.drawImage(video, cx, cy + 0.44 * ch, cw, 0.30 * ch, 0, 0, 240, 96);
+  const p = lCx.getImageData(0, 0, 240, 96).data, n = 240 * 96, x = laneBuf; // reused: runs are one at a time
   for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) x[k * n + i] = p[i * 4 + k] / 255; // the model normalises itself
   return { x, crop: [cx, cy, cw, ch] };
 }
@@ -213,8 +218,8 @@ export async function signs(video, hfovDeg = 90) {
   // the converted detector only handles pictures up to ~1.7x wider than tall (phone held sideways)
   if ((x1 - x0) / (y1 - y0) > 1.6) { const need = Math.round((x1 - x0) / 1.6); y0 = Math.max(0, y0 - Math.round((need - (y1 - y0)) / 2)); y1 = Math.min(H, y0 + need); }
   const w = x1 - x0, h = y1 - y0;
-  cv.width = w; cv.height = h; cx.drawImage(video, x0, y0, w, h, 0, 0, w, h);
-  const px = cx.getImageData(0, 0, w, h).data, n = w * h, x = new Float32Array(3 * n);
+  sizeTo(zcv, w, h); zcx.drawImage(video, x0, y0, w, h, 0, 0, w, h);
+  const px = zcx.getImageData(0, 0, w, h).data, n = w * h, x = new Float32Array(3 * n);
   for (let i = 0; i < n; i++) { x[i] = px[i * 4] / 255; x[n + i] = px[i * 4 + 1] / 255; x[2 * n + i] = px[i * 4 + 2] / 255; }
   const o = await runDetector(x, [3, h, w]);
   const f = (W / 2) / Math.tan(hfovDeg * Math.PI / 360); // focal length in pixels

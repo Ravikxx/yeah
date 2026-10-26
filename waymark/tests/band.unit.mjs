@@ -83,3 +83,10 @@ assert.equal(calibSign(c), -1, 'learns a flipped sign');
 c = newCalib(); for (let i = 0; i < 6; i++) calibUpdate(c, 30, 25); assert.equal(calibSign(c), 1);
 c = newCalib(); for (let i = 0; i < 6; i++) calibUpdate(c, 2, 25); assert.equal(calibSign(c), 0, 'tiny gyro readings teach nothing');
 console.log('PASS (gyro)');
+// the turn ends: the band hears about it within ~150 ms, not 500
+const ending = Array.from({ length: 20 }, (_, i) => ({ t: 1000 + i * 25, w: i < 14 ? 25 : 0 }));
+const endNow = gyroTurnFrom(ending, 3, now0);
+assert.ok(endNow == null || Math.abs(endNow) < 5, 'straightens once the turn is over');
+import { smoothRate } from '../js/band.js';
+assert.ok(smoothRate(20, 0) < 11 && smoothRate(0, 20) < 6, 'falls twice as fast as it rises');
+console.log('PASS (turn ends)');
