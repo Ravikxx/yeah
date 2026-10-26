@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610260243';
-import * as queue from './queue.js?v=202610260243';
-import * as coverage from './coverage.js?v=202610260243';
-import { findView } from './street.js?v=202610260243';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610260243';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610260243';
-import { coverageLines } from './street.js?v=202610260243';
-import { planTrip } from './directions.js?v=202610260243';
-import * as copilot from './copilot.js?v=202610260243';
-import { searchPlaces } from './api.js?v=202610260243';
-import { snapToTrack } from './geo.js?v=202610260243';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610260243';
+import { pickMime } from './record.js?v=202610261327';
+import * as queue from './queue.js?v=202610261327';
+import * as coverage from './coverage.js?v=202610261327';
+import { findView } from './street.js?v=202610261327';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261327';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261327';
+import { coverageLines } from './street.js?v=202610261327';
+import { planTrip } from './directions.js?v=202610261327';
+import * as copilot from './copilot.js?v=202610261327';
+import { searchPlaces } from './api.js?v=202610261327';
+import { snapToTrack } from './geo.js?v=202610261327';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261327';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -603,9 +603,9 @@ async function startCopilot() {
   startCompass(); // inside the tap, so iPhone can ask for motion access
   const btn = document.getElementById('copilotBtn'), box = document.getElementById('copilot');
   btn.setAttribute('aria-pressed', 'true'); box.hidden = false;
-  setCopilot({ alert: 'Getting ready…', detail: 'First time: downloads about 125 MB (once). Use Wi-Fi.' });
+  setCopilot({ alert: 'Getting ready…', detail: 'First time: downloads about 136 MB (once). Use Wi-Fi.' });
   try {
-    await copilot.load((f) => CP.on && setCopilot({ alert: `Downloading ${Math.round(f * 100)}%`, detail: 'About 125 MB, only the first time.' }));
+    await copilot.load((f) => CP.on && setCopilot({ alert: `Downloading ${Math.round(f * 100)}%`, detail: 'About 136 MB, only the first time.' }));
   } catch (err) {
     setCopilot({ alert: 'Co-pilot couldn’t start', detail: err.message || String(err) }); CP.on = false; return;
   }
@@ -757,7 +757,8 @@ function pathFrame(now) {
   g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, ew, eh);
   const s = Math.max(ew / vw, eh / vh), ox = (ew - vw * s) / 2, oy = (eh - vh * s) / 2; // object-fit: cover
   const f = vw / 2 / Math.tan(hfov() * Math.PI / 360);
-  const P = (d, y) => [ox + (vw / 2 - f * y / d) * s, oy + (vh / 2 + f * 1.1 / d) * s];
+  const Praw = (d, y) => [ox + (vw / 2 - f * y / d) * s, oy + (vh / 2 + f * 1.1 / d) * s];
+  let P = Praw;
   const { y: yAt, stopAt, opts } = pathNow(now);
   const far = PB.cur.ds[PB.cur.ds.length - 1];
   const end = Math.max(2.6, Math.min(far, stopAt ?? Infinity));
@@ -769,6 +770,24 @@ function pathFrame(now) {
   for (let d = D0; d <= end + 1e-6; d += 0.2) {
     const y = yAt(Math.max(2, d)), dy = (yAt(Math.min(end, Math.max(2, d) + 0.25)) - yAt(Math.max(2, d - 0.25))) / 0.5, n = Math.hypot(1, dy);
     C.push({ d, y, nx: -dy / n, ny: 1 / n });
+  }
+  // the lane finder (trained on your taps) nudges the band sideways toward where it sees you'll ride:
+  // 60% of the way at the near line, 40% mid, 20% far, fading out above that
+  const ln = opts.lane;
+  if (ln && C.length > 2) {
+    const [lcx, lcy, lcw, lch] = ln.crop, K = [0.6, 0.4, 0.2];
+    const pts = ln.rows.map((row, i) => {
+      const X = ox + (lcx + ln.x[i] * lcw) * s, Y = oy + (lcy + row * lch) * s;
+      const c = C.reduce((a, q) => (Math.abs(Praw(q.d, q.y)[1] - Y) < Math.abs(Praw(a.d, a.y)[1] - Y) ? q : a));
+      return { Y, dx: (X - Praw(c.d, c.y)[0]) * K[i] };
+    }); // near (lowest on screen) first
+    const top = pts[2].Y - 0.08 * eh;
+    const nudge = (yy) => {
+      if (yy >= pts[0].Y) return pts[0].dx;
+      for (let i = 0; i < 2; i++) if (yy >= pts[i + 1].Y) { const u = (yy - pts[i + 1].Y) / ((pts[i].Y - pts[i + 1].Y) || 1); return pts[i + 1].dx + (pts[i].dx - pts[i + 1].dx) * u; }
+      return yy <= top ? 0 : pts[2].dx * (yy - top) / ((pts[2].Y - top) || 1);
+    };
+    P = (d, y) => { const [x, yy] = Praw(d, y); return [x + nudge(yy), yy]; };
   }
   const edge = (half) => {
     const L = C.map((c) => P(c.d + half * c.nx, c.y + half * c.ny)), R = C.map((c) => P(c.d - half * c.nx, c.y - half * c.ny));
@@ -831,7 +850,7 @@ function pathOpts(r) {
   const red = r.seen?.red || (CP.light && performance.now() - CP.light.at < 4000 && CP.light.red);
   const now = performance.now(), waitCar = now - (CP.crossingAt || -1e9) < 1500;
   const stopAt = stopIn != null ? Math.max(2.5, stopIn) : red || waitCar ? 4 : null;
-  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1, slowing: r.slow >= 0.6 || r.speed < (S.gpsSpeed ?? 0) - 1.5 };
+  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1, slowing: r.slow >= 0.6 || r.speed < (S.gpsSpeed ?? 0) - 1.5, lane: r.lane || null };
 }
 
 // A key moment: something's happening, so the model looks every second (as the

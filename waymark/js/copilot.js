@@ -16,12 +16,12 @@
 // directions, plus the road's shape ahead from the directions' route line and your speed.
 
 const ORT = new URL('../ai/ort/', import.meta.url).href; // onnxruntime-web 1.20.1, hosted here (multi-core mode can't load its helpers from another site)
-const FILES = { resnet: 'ai/model/resnet18.onnx', detector: 'ai/model/detector.onnx', trees: 'ai/model/model.json?v=4', path: 'ai/model/path.json?v=2' }; // bump ?v= when retrained
+const FILES = { resnet: 'ai/model/resnet18.onnx', detector: 'ai/model/detector.onnx', trees: 'ai/model/model.json?v=4', path: 'ai/model/path.json?v=2', lane: 'ai/model/reallane.onnx?v=1' }; // bump ?v= when retrained
 const CACHE = 'waymark-copilot-v2';
 const COCO = { 13: 'stop', 10: 'light', 3: 'car', 8: 'car', 6: 'car', 4: 'car' };
 const CROP = 0.72, MEAN = [0.485, 0.456, 0.406], STD = [0.229, 0.224, 0.225];
 
-let ort = null, R = null, D = null, M = null, P = null;
+let ort = null, R = null, D = null, M = null, P = null, LN = null;
 
 // ---------- loading ----------
 async function fetchCached(url, onBytes) {
@@ -69,13 +69,15 @@ export async function load(onProgress = () => {}) {
   EP.threads = self.crossOriginIsolated ? Math.max(1, Math.min(8, navigator.hardwareConcurrency || 4)) : 1;
   try { const n = Number(localStorage.getItem('waymark.debug.threads')); if (n > 0) EP.threads = Math.min(EP.threads, n); } catch { /* no storage */ }
   ort.env.wasm.numThreads = EP.threads;
-  let got = 0; const approx = 125e6;
+  let got = 0; const approx = 136e6;
   const bump = (n) => { got += n; onProgress(Math.min(0.99, got / approx)); };
   const [r, d, t] = await Promise.all([fetchCached(FILES.resnet, bump), fetchCached(FILES.detector, bump), fetchCached(FILES.trees, bump)]);
   RB = r; DB = d;
   R = await makeSession(r, 'resnet');
   D = await makeSession(d, 'detector');
   M = JSON.parse(new TextDecoder().decode(t));
+  // the lane finder trained on your taps (Waymark Lane / Curve Marks) is optional too
+  try { LN = await makeSession(await fetchCached(FILES.lane, bump), 'lane'); } catch (e) { console.warn('co-pilot: no lane finder', e); LN = null; }
   // the driver path is optional: the co-pilot works without it
   try { P = JSON.parse(new TextDecoder().decode(await fetchCached(FILES.path, () => {}))); } catch (e) { console.warn('co-pilot: no driver path', e); }
   // how many inputs this model takes (older ones have no zoom / speed-limit inputs)
@@ -130,6 +132,25 @@ async function embed(video, W, H) {
   for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) x[k * n + i] = (p[i * 4 + k] / 255 - MEAN[k]) / STD[k];
   const out = await runResnet({ image: new ort.Tensor('float32', x, [1, 3, 224, 224]) });
   return Array.from(out.emb.data);
+}
+
+// Lane finder: the whole picture (3:4, centre-cropped if the camera's shape differs) at 192x256 ->
+// where you'd ride on three lines across the picture, as shares of its width. LANE_ROWS: those lines
+// as shares of the picture's height (as on the marking pages). Returns {rows, x, crop} or null.
+export const LANE_ROWS = [0.66, 0.575, 0.505];
+async function laneLook(video, W, H) {
+  if (!LN) return null;
+  let cw = W, ch = H;
+  if (W / H > 0.75) cw = Math.round(H * 0.75); else ch = Math.round(W / 0.75);
+  const cx = (W - cw) / 2, cy = (H - ch) / 2;
+  const c = document.createElement('canvas'); c.width = 192; c.height = 256;
+  const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(video, cx, cy, cw, ch, 0, 0, 192, 256);
+  const p = g.getImageData(0, 0, 192, 256).data, n = 192 * 256, x = new Float32Array(3 * n);
+  for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) x[k * n + i] = p[i * 4 + k] / 255; // the model normalises itself
+  try {
+    const out = await LN.run({ image: new ort.Tensor('float32', x, [1, 3, 256, 192]) });
+    return { rows: LANE_ROWS, x: Array.from(out.x.data), crop: [cx, cy, cw, ch] };
+  } catch (e) { console.warn('co-pilot: lane finder failed', e); return null; }
 }
 
 function hsv255(r, g, b) { // PIL's HSV: all three in 0..255
@@ -521,6 +542,7 @@ export async function look(video, state) {
   const pic = summary(x);
   const p = predictRow(x, pic);
   p.path = predictPath(x, state.map, state.speed, pic);
+  p.lane = await laneLook(video, W, H);
   // follow the directions when a turn is under 30 m away (as in training)
   const nv = x.slice(-10);
   if (nv[6] < 30 && (nv[1] || nv[2])) p.turn = nv[1] ? [0.75, 0.25, 0] : [0, 0.25, 0.75];
