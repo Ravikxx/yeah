@@ -723,3 +723,19 @@ fieldset.field legend { padding: 0; margin-bottom: 6px; }
 @media (max-width: 600px) { .copilot { top: auto; bottom: calc(220px + env(safe-area-inset-bottom, 0px)); } }
 /* the co-pilot's drawn path (driver model), over the Drive camera */
 .drive .cp-path { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* Less on screen while riding: trip settings fold away during a trip, the co-pilot card
+   shows just the call and speeds (tap it for details), no upload chip until there's something to upload */
+.mission-bar:not([data-trip]) #missionMore { display: none; }
+.mission-bar[data-trip]:not([data-open]) { flex-wrap: nowrap; }
+.mission-bar[data-trip]:not([data-open]) .btn { white-space: nowrap; }
+.mission-bar[data-trip]:not([data-open]) .seg,
+.mission-bar[data-trip]:not([data-open]) .mission-opts > :not(#missionEnd) { display: none; }
+#dUpload[data-state="wait"] { display: none; }
+.copilot { cursor: pointer; }
+.copilot:not([data-open]) { grid-template-columns: 1fr auto; align-items: center; width: auto; max-width: min(15rem, calc(100% - 24px)); gap: 2px 12px; padding: 8px 10px; }
+.copilot:not([data-open]) .cp-alert { grid-column: 1 / -1; font-size: 1rem; }
+.copilot:not([data-open]) .cp-odds, .copilot:not([data-open]) .cp-detail { display: none; }
+.copilot:not([data-open]) .cp-speeds small { font-size: .6rem; }
+.copilot:not([data-open]) .cp-speeds b { font-size: 1.05rem; }
+.copilot:not([data-open]) .cp-voice { min-width: 32px; min-height: 32px; }

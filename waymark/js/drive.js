@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610260008';
-import * as queue from './queue.js?v=202610260008';
-import * as coverage from './coverage.js?v=202610260008';
-import { findView } from './street.js?v=202610260008';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610260008';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610260008';
-import { coverageLines } from './street.js?v=202610260008';
-import { planTrip } from './directions.js?v=202610260008';
-import * as copilot from './copilot.js?v=202610260008';
-import { searchPlaces } from './api.js?v=202610260008';
-import { snapToTrack } from './geo.js?v=202610260008';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610260008';
+import { pickMime } from './record.js?v=202610260016';
+import * as queue from './queue.js?v=202610260016';
+import * as coverage from './coverage.js?v=202610260016';
+import { findView } from './street.js?v=202610260016';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610260016';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610260016';
+import { coverageLines } from './street.js?v=202610260016';
+import { planTrip } from './directions.js?v=202610260016';
+import * as copilot from './copilot.js?v=202610260016';
+import { searchPlaces } from './api.js?v=202610260016';
+import { snapToTrack } from './geo.js?v=202610260016';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610260016';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -590,6 +590,12 @@ function wireCopilot() {
     document.getElementById('copilotVoice').setAttribute('aria-pressed', String(CP.voice));
     if (CP.voice) say('Co-pilot voice on', true); // iPhone only speaks after a tap
   });
+  // tap the card for the details (limit, slow-down odds, model speed); tap again to shrink it
+  document.getElementById('copilot').addEventListener('click', (e) => {
+    if (e.target.closest('#copilotVoice')) return;
+    const box = e.currentTarget;
+    if ('open' in box.dataset) delete box.dataset.open; else box.dataset.open = '';
+  });
 }
 
 async function startCopilot() {
@@ -896,6 +902,18 @@ async function sameStreetMission(fix, radius) {
   return false;
 }
 
+// During a trip the trip settings fold away behind "Trip options"
+function tripBar(on) {
+  const bar = document.getElementById('missionBar'), more = document.getElementById('missionMore');
+  if (on) bar.dataset.trip = ''; else delete bar.dataset.trip;
+  delete bar.dataset.open; more.setAttribute('aria-expanded', 'false');
+  if (!more.onclick) more.onclick = () => {
+    const open = !('open' in bar.dataset);
+    if (open) bar.dataset.open = ''; else delete bar.dataset.open;
+    more.setAttribute('aria-expanded', String(open));
+  };
+}
+
 function startMission(trip, radius) {
   M.plan = trip;
   M.plan.pts = prepareTrack(trip.latlngs.map(([lat, lng], i) => [i, lat, lng, null]));
@@ -906,6 +924,7 @@ function startMission(trip, radius) {
   M.layer = L.layerGroup([navLine(trip.latlngs), L.marker(trip.latlngs[trip.latlngs.length - 1], { icon: pinIcon('B', 'nav end') })]).addTo(S.map);
   S.map.setZoom(15);
   document.getElementById('missionEnd').hidden = false;
+  tripBar(true);
   if (S.lastFix) missionFix(S.lastFix);
 }
 
@@ -915,6 +934,7 @@ function endMission(message) {
   if (M.layer) { M.layer.remove(); M.layer = null; }
   document.getElementById('missionSign').hidden = true;
   document.getElementById('missionEnd').hidden = true;
+  tripBar(false);
   if (message) toast(message);
 }
 
