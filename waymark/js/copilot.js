@@ -497,10 +497,12 @@ export function predictRow(x, pic = summary(x)) { // x: the 1063 inputs; exporte
 }
 
 // The driver's path: metres left (+) / right (-) at 5, 10, 15 m ahead. map: the route line's
-// left offset at 5, 10, 15, 25, 40 m (null where unknown); speed in m/s. null without the path model.
+// left offset at 5, 10, 15, 25, 40 m (null where unknown; no directions = all unknown, which the
+// model also learned from rides without a map match); speed in m/s. null without the path model.
 export function predictPath(x, map, speed, pic = summary(x)) {
-  if (!P || !map) return null;
-  const z = [...pic, ...P.keep.map((i) => (x[i] == null ? NaN : x[i])), ...map.map((v) => (v == null ? NaN : v)), speed ?? 0];
+  if (!P) return null;
+  const mp = map || P.mapd.map(() => null);
+  const z = [...pic, ...P.keep.map((i) => (x[i] == null ? NaN : x[i])), ...mp.map((v) => (v == null ? NaN : v)), speed ?? 0];
   return P.path.map((t) => trees(t, z)[0]);
 }
 export const pathAhead = () => (P ? { dist: P.dist, mapd: P.mapd } : null);

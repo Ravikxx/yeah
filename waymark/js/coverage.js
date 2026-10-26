@@ -1,8 +1,8 @@
 // Keeps the footage in and around the map view loaded and indexed, so street
 // view, the coverage layer and navigation all read from one place.
 
-import { getCoverage, mine } from './api.js?v=202610261327';
-import { buildIndex } from './street.js?v=202610261327';
+import { getCoverage, mine } from './api.js?v=202610261513';
+import { buildIndex } from './street.js?v=202610261513';
 
 const MAX_SPAN = 0.6;
 const segs = new Map();
