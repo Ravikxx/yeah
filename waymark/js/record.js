@@ -1,6 +1,6 @@
-import { uploadRoute } from './api.js?v=202610261526';
-import { $, esc, makeMap, routeLine, dotIcon, pinIcon, toast, cueGlyph } from './ui.js?v=202610261526';
-import { prepareTrack, detectTurns, formatDistance, formatClock, formatDuration } from './geo.js?v=202610261526';
+import { uploadRoute } from './api.js?v=202610261527';
+import { $, esc, makeMap, routeLine, dotIcon, pinIcon, toast, cueGlyph } from './ui.js?v=202610261527';
+import { prepareTrack, detectTurns, formatDistance, formatClock, formatDuration } from './geo.js?v=202610261527';
 
 const MAX_SECONDS = 600; // 10 min at ~1.3 Mbps stays under the server's 95 MB cap
 const MAX_BYTES = 90 * 1024 * 1024;

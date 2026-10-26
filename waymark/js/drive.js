@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261526';
-import * as queue from './queue.js?v=202610261526';
-import * as coverage from './coverage.js?v=202610261526';
-import { findView } from './street.js?v=202610261526';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261526';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261526';
-import { coverageLines } from './street.js?v=202610261526';
-import { planTrip } from './directions.js?v=202610261526';
-import * as copilot from './copilot.js?v=202610261526';
-import { searchPlaces } from './api.js?v=202610261526';
-import { snapToTrack } from './geo.js?v=202610261526';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261526';
+import { pickMime } from './record.js?v=202610261527';
+import * as queue from './queue.js?v=202610261527';
+import * as coverage from './coverage.js?v=202610261527';
+import { findView } from './street.js?v=202610261527';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261527';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261527';
+import { coverageLines } from './street.js?v=202610261527';
+import { planTrip } from './directions.js?v=202610261527';
+import * as copilot from './copilot.js?v=202610261527';
+import { searchPlaces } from './api.js?v=202610261527';
+import { snapToTrack } from './geo.js?v=202610261527';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261527';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -774,11 +774,12 @@ function pathFrame(now) {
     const y = yAt(Math.max(2, d)), dy = (yAt(Math.min(end, Math.max(2, d) + 0.25)) - yAt(Math.max(2, d - 0.25))) / 0.5, n = Math.hypot(1, dy);
     C.push({ d, y, nx: -dy / n, ny: 1 / n });
   }
-  // the lane finder (trained on your taps) nudges the band sideways toward where it sees you'll ride:
-  // 60% of the way at the near line, 40% mid, 20% far, fading out above that
+  // the lane finder (trained on your taps) places the band: it goes through its three points (where you'd
+  // ride on the near / mid / far lines, as on the marking pages), starting from the middle of the bottom
+  // of the screen; above the far line the driver path (with directions) takes over
   const ln = opts.lane;
   if (ln && C.length > 2) {
-    const [lcx, lcy, lcw, lch] = ln.crop, K = [0.6, 0.4, 0.2];
+    const [lcx, lcy, lcw, lch] = ln.crop, K = [1, 1, 1];
     const pts = ln.rows.map((row, i) => {
       const X = ox + (lcx + ln.x[i] * lcw) * s, Y = oy + (lcy + row * lch) * s;
       const c = C.reduce((a, q) => (Math.abs(Praw(q.d, q.y)[1] - Y) < Math.abs(Praw(a.d, a.y)[1] - Y) ? q : a));
@@ -786,7 +787,7 @@ function pathFrame(now) {
     }); // near (lowest on screen) first
     const top = pts[2].Y - 0.08 * eh;
     const nudge = (yy) => {
-      if (yy >= pts[0].Y) return pts[0].dx;
+      if (yy >= pts[0].Y) return pts[0].dx * Math.max(0, (eh - yy) / ((eh - pts[0].Y) || 1)); // from the bottom middle
       for (let i = 0; i < 2; i++) if (yy >= pts[i + 1].Y) { const u = (yy - pts[i + 1].Y) / ((pts[i].Y - pts[i + 1].Y) || 1); return pts[i + 1].dx + (pts[i].dx - pts[i + 1].dx) * u; }
       return yy <= top ? 0 : pts[2].dx * (yy - top) / ((pts[2].Y - top) || 1);
     };
