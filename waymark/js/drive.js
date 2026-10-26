@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261908';
-import * as queue from './queue.js?v=202610261908';
-import * as coverage from './coverage.js?v=202610261908';
-import { findView } from './street.js?v=202610261908';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261908';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261908';
-import { coverageLines } from './street.js?v=202610261908';
-import { planTrip } from './directions.js?v=202610261908';
-import * as copilot from './copilot.js?v=202610261908';
-import { searchPlaces } from './api.js?v=202610261908';
-import { snapToTrack } from './geo.js?v=202610261908';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261908';
+import { pickMime } from './record.js?v=202610261916';
+import * as queue from './queue.js?v=202610261916';
+import * as coverage from './coverage.js?v=202610261916';
+import { findView } from './street.js?v=202610261916';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261916';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261916';
+import { coverageLines } from './street.js?v=202610261916';
+import { planTrip } from './directions.js?v=202610261916';
+import * as copilot from './copilot.js?v=202610261916';
+import { searchPlaces } from './api.js?v=202610261916';
+import { snapToTrack } from './geo.js?v=202610261916';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261916';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -633,7 +633,7 @@ async function startCopilot() {
   CP.arcTimer = setInterval(() => {
     // a smoothed turn rate: it rises and falls gradually, so the band never flips between 'turning' and 'not'
     const before = CP.rateF; CP.rateF = before * 0.75 + (turnRate() ?? 0) * 0.25;
-    if (!CP.on || !CP.lastR || (Math.abs(CP.rateF) < 1 && Math.abs(before) < 1)) return;
+    if (!CP.on || !CP.lastR || CP.lastR.path || (Math.abs(CP.rateF) < 1 && Math.abs(before) < 1)) return;
     drawPath(steadyPath({ ...CP.lastR }), pathOpts(CP.lastR));
   }, 100);
   startCompass(); // inside the tap, so iPhone can ask for motion access
@@ -901,11 +901,13 @@ function steadyPath(r) {
   const arc = turning
     ? (copilot.pathAhead()?.dist || [5, 10, 15]).map((d) => { const k = (rate * Math.PI / 180) / Math.max(v, 1.5); return strength * Math.max(-0.8 * d, Math.min(0.8 * d, -k * d * d / 2)); })
     : [0, 0, 0];
-  const now = r.lane ? arc : r.path || [0, 0, 0];
+  // with directions on, steer like the simulator: the driver model, given the route's shape from the map;
+  // without directions (Free ride) there's no route to plan from, so the lane finder places the band
+  const now = r.path ? r.path : r.lane ? arc : [0, 0, 0];
   const keep = PB.steady && performance.now() - PB.steady.at < 3000;
   const w = turning ? 0.6 : 0.5;
   const ys = keep ? now.map((y, i) => w * y + (1 - w) * PB.steady.ys[i]) : now;
-  if (r.lane) r.lane = { ...r.lane, x: keep && PB.steady.lane ? r.lane.x.map((x, i) => 0.5 * x + 0.5 * PB.steady.lane[i]) : r.lane.x };
+  if (r.lane && !r.path) r.lane = { ...r.lane, x: keep && PB.steady.lane ? r.lane.x.map((x, i) => 0.5 * x + 0.5 * PB.steady.lane[i]) : r.lane.x };
   PB.steady = { ys, lane: r.lane?.x, at: performance.now() };
   return ys;
 }
@@ -917,7 +919,7 @@ function pathOpts(r) {
   const red = r.seen?.red || (CP.light && performance.now() - CP.light.at < 4000 && CP.light.red);
   const now = performance.now(), waitCar = now - (CP.crossingAt || -1e9) < 1500;
   const stopAt = stopIn != null ? Math.max(2.5, stopIn) : red || waitCar ? 4 : null;
-  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1, slowing: r.slow >= 0.6 || r.speed < (S.gpsSpeed ?? 0) - 1.5, lane: r.lane || null, rate: CP.rateF ?? 0 };
+  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1, slowing: r.slow >= 0.6 || r.speed < (S.gpsSpeed ?? 0) - 1.5, lane: r.path ? null : r.lane || null, rate: CP.rateF ?? 0 };
 }
 
 // A key moment: something's happening, so the model looks every second (as the
