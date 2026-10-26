@@ -3,19 +3,19 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610262117';
-import * as queue from './queue.js?v=202610262117';
-import * as coverage from './coverage.js?v=202610262117';
-import { findView } from './street.js?v=202610262117';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262117';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262117';
-import { coverageLines } from './street.js?v=202610262117';
-import { planTrip } from './directions.js?v=202610262117';
-import * as copilot from './copilot.js?v=202610262117';
-import { searchPlaces } from './api.js?v=202610262117';
-import { snapToTrack } from './geo.js?v=202610262117';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262117';
-import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610262117';
+import { pickMime } from './record.js?v=202610262122';
+import * as queue from './queue.js?v=202610262122';
+import * as coverage from './coverage.js?v=202610262122';
+import { findView } from './street.js?v=202610262122';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262122';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262122';
+import { coverageLines } from './street.js?v=202610262122';
+import { planTrip } from './directions.js?v=202610262122';
+import * as copilot from './copilot.js?v=202610262122';
+import { searchPlaces } from './api.js?v=202610262122';
+import { snapToTrack } from './geo.js?v=202610262122';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262122';
+import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610262122';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -649,7 +649,24 @@ function wireCopilot() {
   });
 }
 
+// If the page was killed while the co-pilot ran (iPhones do this when memory runs out), there is no event to catch
+// it, so a note is kept while it runs. Seeing that note on the next start means it crashed: switch to the processor.
+const RUN_KEY = 'waymark.cp';
+function markRunning(on) { try { if (on) localStorage.setItem(RUN_KEY, String(Date.now())); else localStorage.removeItem(RUN_KEY); } catch { /* no storage */ } }
+function checkCrashed() {
+  try {
+    const t = Number(localStorage.getItem(RUN_KEY));
+    if (t && Date.now() - t < 6 * 3600e3 && new URLSearchParams(location.search).get('gpu') !== '1') {
+      localStorage.setItem('waymark.forceCpu', '1');
+      toast('The co-pilot crashed last time, so it now runs on the processor (slower but steadier). Add ?gpu=1 to the address to try the GPU again.');
+    }
+  } catch { /* no storage */ }
+}
+document.addEventListener('visibilitychange', () => { if (CP.on) markRunning(!document.hidden); }); // a background kill isn't a crash
+addEventListener('pagehide', () => markRunning(false));
+
 async function startCopilot() {
+  checkCrashed(); markRunning(true);
   CP.on = true;
   // the AI looks every 1-3 s, but the compass is read many times a second: between looks, keep the band's
   // turn arc live (a U-turn takes about 3 s, shorter than the gap between looks)
@@ -676,7 +693,7 @@ async function startCopilot() {
 }
 
 function stopCopilot() {
-  CP.on = false; clearInterval(CP.arcTimer); CP.lastR = null; CP.rateF = 0; CP.cars = null;
+  CP.on = false; markRunning(false); clearInterval(CP.arcTimer); CP.lastR = null; CP.rateF = 0; CP.cars = null;
   document.getElementById('copilotBtn')?.setAttribute('aria-pressed', 'false');
   const box = document.getElementById('copilot'); if (box) box.hidden = true;
   drawPath(null);

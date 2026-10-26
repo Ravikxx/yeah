@@ -1,11 +1,11 @@
-import { showShell } from './shell.js?v=202610262117';
-import { enterDrive } from './drive.js?v=202610262117';
-import { enterStreetView } from './streetview.js?v=202610262117';
-import { enterPreview, enterLive } from './nav.js?v=202610262117';
-import { enterRecorder } from './record.js?v=202610262117';
-import { showRoute } from './route.js?v=202610262117';
-import * as queue from './queue.js?v=202610262117';
-import * as coverage from './coverage.js?v=202610262117';
+import { showShell } from './shell.js?v=202610262122';
+import { enterDrive } from './drive.js?v=202610262122';
+import { enterStreetView } from './streetview.js?v=202610262122';
+import { enterPreview, enterLive } from './nav.js?v=202610262122';
+import { enterRecorder } from './record.js?v=202610262122';
+import { showRoute } from './route.js?v=202610262122';
+import * as queue from './queue.js?v=202610262122';
+import * as coverage from './coverage.js?v=202610262122';
 
 // Hash routes:
 //   #/  #/directions  #/routes  #/mine     the map app

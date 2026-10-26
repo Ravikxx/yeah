@@ -44,7 +44,18 @@ const EP = { resnet: 'CPU', detector: 'CPU', threads: 1 };
 const cpuName = () => (EP.threads > 1 ? `CPU×${EP.threads}` : 'CPU');
 const within = (p, ms, what) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`${what} took over ${ms / 1000} s`)), ms))]);
 let gpuOk = null;
+// ?gpu=0 in the address forces the processor, ?gpu=1 forces the GPU (and clears a past crash); after a crash the app
+// switches itself to the processor (drive.js sets waymark.forceCpu)
+function gpuAllowed() {
+  try {
+    const q = new URLSearchParams(location.search).get('gpu');
+    if (q === '1') { localStorage.removeItem('waymark.forceCpu'); return true; }
+    if (q === '0') return false;
+    return localStorage.getItem('waymark.forceCpu') !== '1';
+  } catch { return true; }
+}
 async function hasGpu() {
+  if (gpuOk === null && !gpuAllowed()) gpuOk = false;
   if (gpuOk === null) {
     try { gpuOk = !!navigator.gpu && !!(await within(navigator.gpu.requestAdapter(), 5000, 'finding the GPU')); } catch { gpuOk = false; }
   }
