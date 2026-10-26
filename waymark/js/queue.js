@@ -3,7 +3,7 @@
 // signal or a closed tab doesn't lose footage. Falls back to memory when
 // IndexedDB isn't available (some private windows).
 
-import { uploadRoute } from './api.js?v=202610260143';
+import { uploadRoute } from './api.js?v=202610260147';
 
 const DB_NAME = 'waymark';
 const STORE = 'uploads';

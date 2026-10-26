@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610260143';
-import * as queue from './queue.js?v=202610260143';
-import * as coverage from './coverage.js?v=202610260143';
-import { findView } from './street.js?v=202610260143';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610260143';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610260143';
-import { coverageLines } from './street.js?v=202610260143';
-import { planTrip } from './directions.js?v=202610260143';
-import * as copilot from './copilot.js?v=202610260143';
-import { searchPlaces } from './api.js?v=202610260143';
-import { snapToTrack } from './geo.js?v=202610260143';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610260143';
+import { pickMime } from './record.js?v=202610260147';
+import * as queue from './queue.js?v=202610260147';
+import * as coverage from './coverage.js?v=202610260147';
+import { findView } from './street.js?v=202610260147';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610260147';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610260147';
+import { coverageLines } from './street.js?v=202610260147';
+import { planTrip } from './directions.js?v=202610260147';
+import * as copilot from './copilot.js?v=202610260147';
+import { searchPlaces } from './api.js?v=202610260147';
+import { snapToTrack } from './geo.js?v=202610260147';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610260147';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -698,8 +698,8 @@ function mapAhead() {
   });
 }
 
-// Draws the driver's path on the camera view like Tesla's FSD screen: a wide blue ribbon (darker
-// where the AI wants to speed up), fading out where it plans to stop, with a white stop line there.
+// Draws the driver's path on the camera view like Tesla's FSD (v13) screen: a solid glowing blue band
+// (deeper blue where the AI wants to speed up), ending where it plans to stop, with a white stop line there.
 // The phone sits on the handlebars ~1.1 m up, looking level: a point d m ahead is f·1.1/d below the middle.
 // path: left offsets (m) at 5, 10, 15 m; opts: { stopAt (m) or null, faster (bool) }
 function drawPath(path, opts = {}) {
@@ -720,17 +720,23 @@ function drawPath(path, opts = {}) {
     return 0.5 * (2 * y1 + (-y0 + y2) * u + (2 * y0 - 5 * y1 + 4 * y2 - y3) * u * u + (-y0 + 3 * y1 - 3 * y2 + y3) * u * u * u); // Catmull-Rom
   };
   const end = Math.max(3, Math.min(ds[ds.length - 1], opts.stopAt ?? Infinity));
-  const W = 0.55; // half the ribbon's width in metres (about a lane-hugging bike line)
-  const L = [], R = [];
-  for (let d = 2; d <= end + 1e-6; d += 0.5) { const y = yAt(d); L.push(P(d, y + W)); R.push(P(d, y - W)); }
-  const near = P(2, 0)[1], far = P(end, yAt(end))[1];
-  const grad = g.createLinearGradient(0, near, 0, far);
-  const deep = opts.faster ? '30, 110, 255' : '62, 140, 255';
-  grad.addColorStop(0, `rgba(${deep}, 0.62)`);
-  grad.addColorStop(opts.stopAt != null ? 0.55 : 0.7, `rgba(${deep}, 0.45)`);
-  grad.addColorStop(1, `rgba(${deep}, 0)`);
-  g.fillStyle = grad;
-  g.beginPath(); [...L, ...R.reverse()].forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.fill();
+  // FSD v13 style: a solid, saturated blue band with a lighter glowing core, crisp edges, fading
+  // only at its tip (deeper blue when the AI wants to speed up)
+  const band = (half, color, alphaNear) => {
+    const L = [], R = [];
+    for (let d = 2; d <= end + 1e-6; d += 0.5) { const y = yAt(d); L.push(P(d, y + half)); R.push(P(d, y - half)); }
+    const near = P(2, 0)[1], far = P(end, yAt(end))[1];
+    const grad = g.createLinearGradient(0, near, 0, far);
+    grad.addColorStop(0, `rgba(${color}, ${alphaNear})`);
+    grad.addColorStop(0.8, `rgba(${color}, ${alphaNear})`);
+    grad.addColorStop(1, `rgba(${color}, 0)`);
+    g.fillStyle = grad;
+    g.beginPath(); [...L, ...R.reverse()].forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.fill();
+  };
+  g.shadowColor = 'rgba(40, 140, 255, 0.9)'; g.shadowBlur = 14;
+  band(0.32, opts.faster ? '10, 105, 255' : '30, 128, 255', 0.95); // the band
+  g.shadowBlur = 0;
+  band(0.1, '150, 205, 255', 0.35);                                 // its lighter core
   if (opts.stopAt != null && opts.stopAt <= ds[ds.length - 1]) { // where it plans to stop: a white line across
     const y = yAt(end), a = P(end, y + 1.6), b = P(end, y - 1.6);
     g.strokeStyle = 'rgba(255, 255, 255, 0.92)'; g.lineWidth = Math.max(3, 0.25 * f * s / end); g.lineCap = 'round';

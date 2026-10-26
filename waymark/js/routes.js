@@ -1,10 +1,10 @@
 // Route lists for the side panel: public walkthrough routes, your own routes,
 // and your street-capture sessions.
 
-import { listRoutes, getRoute, thumbUrl, mine, deleteRoute, exportData } from './api.js?v=202610260143';
-import * as coverage from './coverage.js?v=202610260143';
-import { $, esc, pinIcon, toast, modeWord, fitPadding } from './ui.js?v=202610260143';
-import { distance, formatDistance, formatDuration, formatClock } from './geo.js?v=202610260143';
+import { listRoutes, getRoute, thumbUrl, mine, deleteRoute, exportData } from './api.js?v=202610260147';
+import * as coverage from './coverage.js?v=202610260147';
+import { $, esc, pinIcon, toast, modeWord, fitPadding } from './ui.js?v=202610260147';
+import { distance, formatDistance, formatDuration, formatClock } from './geo.js?v=202610260147';
 
 let me = null;
 
