@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610260103';
-import * as queue from './queue.js?v=202610260103';
-import * as coverage from './coverage.js?v=202610260103';
-import { findView } from './street.js?v=202610260103';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610260103';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610260103';
-import { coverageLines } from './street.js?v=202610260103';
-import { planTrip } from './directions.js?v=202610260103';
-import * as copilot from './copilot.js?v=202610260103';
-import { searchPlaces } from './api.js?v=202610260103';
-import { snapToTrack } from './geo.js?v=202610260103';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610260103';
+import { pickMime } from './record.js?v=202610260143';
+import * as queue from './queue.js?v=202610260143';
+import * as coverage from './coverage.js?v=202610260143';
+import { findView } from './street.js?v=202610260143';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610260143';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610260143';
+import { coverageLines } from './street.js?v=202610260143';
+import { planTrip } from './directions.js?v=202610260143';
+import * as copilot from './copilot.js?v=202610260143';
+import { searchPlaces } from './api.js?v=202610260143';
+import { snapToTrack } from './geo.js?v=202610260143';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610260143';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -651,7 +651,7 @@ async function loopCopilot() {
         const key = CP.key = keyMoment(last);
         if (t0 >= nextFull) { op = 'look';
           last = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null, limit: limitNow(), map: mapAhead(), speed: S.gpsSpeed ?? 0 });
-          drawPath(last.path);
+          drawPath(last.path, pathOpts(last));
           const done = performance.now();
           CP.secs = (done - t0) / 1000; lastDet = done; feed(last, done);
           // key moments: a look every second. Otherwise looks in pairs 1 s apart (so the model's
@@ -698,9 +698,11 @@ function mapAhead() {
   });
 }
 
-// Draws the driver's path (left offsets at 5, 10, 15 m) on the camera view: a phone on the
-// handlebars ~1.1 m up, looking level, so a point d m ahead sits f·1.1/d below the middle.
-function drawPath(path) {
+// Draws the driver's path on the camera view like Tesla's FSD screen: a wide blue ribbon (darker
+// where the AI wants to speed up), fading out where it plans to stop, with a white stop line there.
+// The phone sits on the handlebars ~1.1 m up, looking level: a point d m ahead is f·1.1/d below the middle.
+// path: left offsets (m) at 5, 10, 15 m; opts: { stopAt (m) or null, faster (bool) }
+function drawPath(path, opts = {}) {
   let cv = document.getElementById('cpPath');
   if (!path || !CP.on || !el.dcam?.videoWidth) { if (cv) cv.hidden = true; return; }
   if (!cv) { cv = document.createElement('canvas'); cv.id = 'cpPath'; cv.className = 'cp-path'; el.dcam.after(cv); }
@@ -709,10 +711,40 @@ function drawPath(path) {
   const g = cv.getContext('2d'); g.scale(devicePixelRatio, devicePixelRatio);
   const s = Math.max(ew / vw, eh / vh), ox = (ew - vw * s) / 2, oy = (eh - vh * s) / 2; // object-fit: cover
   const f = vw / 2 / Math.tan(hfov() * Math.PI / 360);
-  const dist = copilot.pathAhead().dist;
-  const pts = [[2, 0], ...dist.map((d, i) => [d, path[i]])].map(([d, y]) => [ox + (vw / 2 - f * y / d) * s, oy + (vh / 2 + f * 1.1 / d) * s]);
-  g.lineWidth = 10; g.lineCap = g.lineJoin = 'round'; g.strokeStyle = 'rgba(40, 220, 140, 0.75)';
-  g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke();
+  const P = (d, y) => [ox + (vw / 2 - f * y / d) * s, oy + (vh / 2 + f * 1.1 / d) * s];
+  // smooth centre line through (2 m, 0) and the model's points, sampled every half metre
+  const ds = [2, ...copilot.pathAhead().dist], ys = [0, ...path];
+  const yAt = (d) => {
+    const i = Math.min(ds.length - 2, Math.max(0, ds.findIndex((x, k) => d <= ds[k + 1])));
+    const u = (d - ds[i]) / (ds[i + 1] - ds[i]), y0 = ys[Math.max(0, i - 1)], y1 = ys[i], y2 = ys[i + 1], y3 = ys[Math.min(ys.length - 1, i + 2)];
+    return 0.5 * (2 * y1 + (-y0 + y2) * u + (2 * y0 - 5 * y1 + 4 * y2 - y3) * u * u + (-y0 + 3 * y1 - 3 * y2 + y3) * u * u * u); // Catmull-Rom
+  };
+  const end = Math.max(3, Math.min(ds[ds.length - 1], opts.stopAt ?? Infinity));
+  const W = 0.55; // half the ribbon's width in metres (about a lane-hugging bike line)
+  const L = [], R = [];
+  for (let d = 2; d <= end + 1e-6; d += 0.5) { const y = yAt(d); L.push(P(d, y + W)); R.push(P(d, y - W)); }
+  const near = P(2, 0)[1], far = P(end, yAt(end))[1];
+  const grad = g.createLinearGradient(0, near, 0, far);
+  const deep = opts.faster ? '30, 110, 255' : '62, 140, 255';
+  grad.addColorStop(0, `rgba(${deep}, 0.62)`);
+  grad.addColorStop(opts.stopAt != null ? 0.55 : 0.7, `rgba(${deep}, 0.45)`);
+  grad.addColorStop(1, `rgba(${deep}, 0)`);
+  g.fillStyle = grad;
+  g.beginPath(); [...L, ...R.reverse()].forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.fill();
+  if (opts.stopAt != null && opts.stopAt <= ds[ds.length - 1]) { // where it plans to stop: a white line across
+    const y = yAt(end), a = P(end, y + 1.6), b = P(end, y - 1.6);
+    g.strokeStyle = 'rgba(255, 255, 255, 0.92)'; g.lineWidth = Math.max(3, 0.25 * f * s / end); g.lineCap = 'round';
+    g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.stroke();
+  }
+}
+
+// Where the path should end (a stop it plans) and whether the AI wants to go faster than you are.
+function pathOpts(r) {
+  const stopIn = stopAhead();
+  const red = r.seen?.red || (CP.light && performance.now() - CP.light.at < 4000 && CP.light.red);
+  const now = performance.now(), waitCar = now - (CP.crossingAt || -1e9) < 1500;
+  const stopAt = stopIn != null ? Math.max(2.5, stopIn) : red || waitCar ? 4 : null;
+  return { stopAt, faster: r.speed > (S.gpsSpeed ?? 0) + 1 };
 }
 
 // A key moment: something's happening, so the model looks every second (as the
