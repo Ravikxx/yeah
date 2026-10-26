@@ -3,19 +3,19 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261952';
-import * as queue from './queue.js?v=202610261952';
-import * as coverage from './coverage.js?v=202610261952';
-import { findView } from './street.js?v=202610261952';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261952';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261952';
-import { coverageLines } from './street.js?v=202610261952';
-import { planTrip } from './directions.js?v=202610261952';
-import * as copilot from './copilot.js?v=202610261952';
-import { searchPlaces } from './api.js?v=202610261952';
-import { snapToTrack } from './geo.js?v=202610261952';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261952';
-import { turnRateFrom, smoothRate, planBand } from './band.js?v=202610261952';
+import { pickMime } from './record.js?v=202610262014';
+import * as queue from './queue.js?v=202610262014';
+import * as coverage from './coverage.js?v=202610262014';
+import { findView } from './street.js?v=202610262014';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262014';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262014';
+import { coverageLines } from './street.js?v=202610262014';
+import { planTrip } from './directions.js?v=202610262014';
+import * as copilot from './copilot.js?v=202610262014';
+import { searchPlaces } from './api.js?v=202610262014';
+import { snapToTrack } from './geo.js?v=202610262014';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262014';
+import { turnRateFrom, smoothRate, planBand } from './band.js?v=202610262014';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }

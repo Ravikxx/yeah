@@ -1,7 +1,7 @@
 // Turn-by-turn from the router (OSRM responses via the Waymark Worker).
 
-import { getDirections, getRoadSpeeds } from './api.js?v=202610261952';
-import { formatDistance } from './geo.js?v=202610261952';
+import { getDirections, getRoadSpeeds } from './api.js?v=202610262014';
+import { formatDistance } from './geo.js?v=202610262014';
 
 const COMPASS = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'];
 export const compass = (deg) => COMPASS[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
@@ -75,7 +75,9 @@ function flatten(r, mode, from, to) {
 // the least big-road riding that isn't far longer.
 const BIG_NAME = /highway|expressway|freeway|parkway|bypass|pike|route \d/i;
 export const isBigRoad = (s) => Boolean(s.ref) || BIG_NAME.test(s.name || '');
-const MID_MPH = 30, FAST_MPH = 38;
+// the router rates a plain residential street ~15 mph; 21+ means a collector or a street with a posted limit
+// (a four-lane 25 mph road lands here), 30+ a main road
+const MID_MPH = 21, FAST_MPH = 30;
 // 2 = busy, 1 = medium, 0 = quiet: the map's own road facts (class, lanes, posted limit) when the
 // backend has them, else the router's car-speed estimate
 const levelOf = (x) => Math.max(x.level ?? 0, x.mph >= FAST_MPH ? 2 : x.mph >= MID_MPH ? 1 : 0);
