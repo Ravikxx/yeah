@@ -7,6 +7,10 @@
 // All offsets are metres to the LEFT (+) of the way you're facing, at 5, 10 and 15 m ahead.
 
 export const DISTS = [5, 10, 15];
+// How much the route's own shape counts against the driver model at 5, 10 and 15 m ahead. Chosen on rides the
+// model never saw (see v2/planner_eval.py): the route is best close up and on straights, the model is best at
+// seeing a turn coming, and the blend keeps both: 89% of turns bent the right way, 3% false bends.
+export const ROUTE_WEIGHT = [0.8, 0.5, 0.3];
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 // Degrees a second, + = turning right, from compass samples [{ t (ms), h (deg) }] over the last ~0.8 s.
@@ -51,7 +55,9 @@ export function planBand(st, { now, v, rate, path, lane, route = null, dists = D
   // with directions the driver model plans from the route's shape; below ~3 mph (where it was never trained)
   // the route itself is shown; with no directions the lane finder places the band and the turn you're in bends it
   let planned = path || null;
-  if (planned && v < 1.5) planned = route && route.slice(0, 3).every((y) => y != null) ? route.slice(0, 3) : null;
+  const known = route && route.slice(0, 3).every((y) => y != null) ? route.slice(0, 3) : null;
+  if (planned && v < 1.5) planned = known;
+  else if (planned && known) planned = planned.map((y, i) => ROUTE_WEIGHT[i] * known[i] + (1 - ROUTE_WEIGHT[i]) * y);
   if (planned) planned = planned.map((y, i) => clamp(y, -0.7 * dists[i], 0.7 * dists[i]));
   const target = planned || (lane ? turnArc(rate, v, dists) : [0, 0, 0]);
   const keep = st && now - st.at < 3000;
@@ -79,7 +85,7 @@ export function planBand(st, { now, v, rate, path, lane, route = null, dists = D
   if (acc > 30) pen += 0.25;                            // poor GPS
   if (path && route && v >= 1.5) {                      // the model and the route should roughly agree
     const gap = route.slice(0, 3).reduce((a, y, i) => a + (y == null ? 0 : Math.abs(y - path[i])), 0) / 3;
-    if (gap > 4) pen += 0.3;
+    pen += clamp((gap - 1.5) / 6, 0, 0.65);       // the further apart, the fainter
   }
   const conf = clamp(0.7 * (st?.conf ?? 1) + 0.3 * (1 - pen), 0.35, 1);
   return { ys, laneX, conf, state: { ys, lane: laneX, at: now, conf, lookId } };

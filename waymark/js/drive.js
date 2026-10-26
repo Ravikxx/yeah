@@ -3,19 +3,19 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610262014';
-import * as queue from './queue.js?v=202610262014';
-import * as coverage from './coverage.js?v=202610262014';
-import { findView } from './street.js?v=202610262014';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262014';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262014';
-import { coverageLines } from './street.js?v=202610262014';
-import { planTrip } from './directions.js?v=202610262014';
-import * as copilot from './copilot.js?v=202610262014';
-import { searchPlaces } from './api.js?v=202610262014';
-import { snapToTrack } from './geo.js?v=202610262014';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262014';
-import { turnRateFrom, smoothRate, planBand } from './band.js?v=202610262014';
+import { pickMime } from './record.js?v=202610262016';
+import * as queue from './queue.js?v=202610262016';
+import * as coverage from './coverage.js?v=202610262016';
+import { findView } from './street.js?v=202610262016';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262016';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262016';
+import { coverageLines } from './street.js?v=202610262016';
+import { planTrip } from './directions.js?v=202610262016';
+import * as copilot from './copilot.js?v=202610262016';
+import { searchPlaces } from './api.js?v=202610262016';
+import { snapToTrack } from './geo.js?v=202610262016';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262016';
+import { turnRateFrom, smoothRate, planBand } from './band.js?v=202610262016';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -902,7 +902,7 @@ function steadyPath(r) {
   // all the deciding lives in band.js (and is replayed against recorded rides by tests/band.replay.mjs)
   const v = S.gpsSpeed ?? 0, dists = copilot.pathAhead()?.dist || [5, 10, 15];
   const out = planBand(PB.steady, { now: performance.now(), v, rate: CP.rateF ?? 0, path: r.path, lane: r.lane, dists,
-    route: r.path && v < 1.5 ? mapAhead() : null, lookId: r.stamp, acc: S.lastFix?.acc });
+    route: r.path ? mapAhead() : null, lookId: r.stamp, acc: S.lastFix?.acc });
   if (r.lane) r.lane = out.laneX ? { ...r.lane, x: out.laneX } : r.lane;
   PB.steady = out.state;
   return out.ys;
