@@ -61,6 +61,8 @@ async function makeSession(bytes, key) {
   return ort.InferenceSession.create(bytes, { executionProviders: ['wasm'] });
 }
 export const backend = () => ({ ...EP });
+const LAST = { times: null };
+export const lastTimes = () => LAST.times;
 
 export async function load(onProgress = () => {}) {
   if (M) return;
@@ -122,7 +124,7 @@ function grab(video) {
 }
 
 // torchvision: crop top 72%, resize shorter side to 256, centre-crop 224, normalise
-async function embed(video, W, H) {
+function embedFeeds(video, W, H) {
   const ch = Math.round(H * CROP), s = 256 / Math.min(W, ch);
   const rw = Math.round(W * s), rh = Math.round(ch * s);
   const c = document.createElement('canvas'); c.width = 224; c.height = 224;
@@ -130,16 +132,17 @@ async function embed(video, W, H) {
   g.drawImage(video, 0, 0, W, ch, -(rw - 224) / 2, -(rh - 224) / 2, rw, rh);
   const p = g.getImageData(0, 0, 224, 224).data, n = 224 * 224, x = new Float32Array(3 * n);
   for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) x[k * n + i] = (p[i * 4 + k] / 255 - MEAN[k]) / STD[k];
-  const out = await runResnet({ image: new ort.Tensor('float32', x, [1, 3, 224, 224]) });
-  return Array.from(out.emb.data);
+  return { image: new ort.Tensor('float32', x, [1, 3, 224, 224]) };
 }
+async function embedRun(feeds) { return Array.from((await runResnet(feeds)).emb.data); }
+const embed = (video, W, H) => embedRun(embedFeeds(video, W, H));
 
 // Lane finder (v2, reads the road): the picture made 3:4 (centre-cropped if the camera's shape differs),
 // then only its road band (44%..74% of the height: just above the far line to the handlebars) at 240x96
 // -> where you'd ride on three lines across the picture, as shares of its width. LANE_ROWS: those lines
 // as shares of the 3:4 picture's height (as on the marking pages). Returns {rows, x, crop} or null.
 export const LANE_ROWS = [0.66, 0.575, 0.505];
-async function laneLook(video, W, H) {
+function laneInput(video, W, H) {
   if (!LN) return null;
   let cw = W, ch = H;
   if (W / H > 0.75) cw = Math.round(H * 0.75); else ch = Math.round(W / 0.75);
@@ -148,11 +151,16 @@ async function laneLook(video, W, H) {
   const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(video, cx, cy + 0.44 * ch, cw, 0.30 * ch, 0, 0, 240, 96);
   const p = g.getImageData(0, 0, 240, 96).data, n = 240 * 96, x = new Float32Array(3 * n);
   for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) x[k * n + i] = p[i * 4 + k] / 255; // the model normalises itself
+  return { x, crop: [cx, cy, cw, ch] };
+}
+async function laneRun(inp) {
+  if (!LN || !inp) return null;
   try {
-    const out = await LN.run({ image: new ort.Tensor('float32', x, [1, 3, 96, 240]) });
-    return { rows: LANE_ROWS, x: Array.from(out.x.data), crop: [cx, cy, cw, ch] };
+    const out = await LN.run({ image: new ort.Tensor('float32', inp.x, [1, 3, 96, 240]) });
+    return { rows: LANE_ROWS, x: Array.from(out.x.data), crop: inp.crop };
   } catch (e) { console.warn('co-pilot: lane finder failed', e); return null; }
 }
+const laneLook = (video, W, H) => laneRun(laneInput(video, W, H));
 
 function hsv255(r, g, b) { // PIL's HSV: all three in 0..255
   const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
@@ -170,9 +178,13 @@ function lightColor(px, W, box) {
   return [red / Math.max(1, n), green / Math.max(1, n)];
 }
 
-async function detect(img) {
+function detectInput(img) {
   const { W, H, px } = img, n = W * H, x = new Float32Array(3 * n);
   for (let i = 0; i < n; i++) { x[i] = px[i * 4] / 255; x[n + i] = px[i * 4 + 1] / 255; x[2 * n + i] = px[i * 4 + 2] / 255; }
+  return x;
+}
+async function detectRun(img, x) {
+  const { W, H, px } = img;
   const o = await runDetector(x, [3, H, W]);
   const line = H * (H > W ? 0.62 : 0.75), out = [];
   for (let i = 0; i < o.scores.data.length; i++) {
@@ -184,6 +196,7 @@ async function detect(img) {
   }
   return out;
 }
+const detect = (img) => detectRun(img, detectInput(img));
 
 // ---------- zoomed look for signs ----------
 // Stop signs (and lights) sit on the right, about a third of the way down. The
@@ -524,9 +537,20 @@ function zoomFeats(t) {
 //   map: route line's left offsets at 5..40 m or null, speed (m/s) }
 export async function look(video, state) {
   const t = performance.now() / 1000;
+  // Time of each step, shown on the co-pilot card (ms). All three models read the SAME camera frame, taken
+  // up front (they used to read it one after another, a bit later each).
+  const T = {}, t0 = performance.now(), lap = (k, a = t0) => { T[k] = Math.round(performance.now() - a); };
   const img = grab(video), { W, H } = img;
-  const emb = await embed(video, W, H); // one model at a time: single-threaded WebAssembly can't run two at once
-  const ds = await detect(img);
+  const eIn = embedFeeds(video, W, H), dIn = detectInput(img), lIn = laneInput(video, W, H);
+  lap('prep');
+  const timed = async (k, p) => { const a = performance.now(); const r = await p(); lap(k, a); return r; };
+  // On the GPU the three models run at the same time. On the CPU one at a time: single-threaded
+  // WebAssembly can't run two at once.
+  const together = EP.resnet === 'GPU' && EP.detector === 'GPU' && (!LN || EP.lane === 'GPU');
+  let emb, ds, lane;
+  if (together) [emb, ds, lane] = await Promise.all([timed('eyes', () => embedRun(eIn)), timed('cars', () => detectRun(img, dIn)), timed('lane', () => laneRun(lIn))]);
+  else { emb = await timed('eyes', () => embedRun(eIn)); ds = await timed('cars', () => detectRun(img, dIn)); lane = await timed('lane', () => laneRun(lIn)); }
+  const tTrees = performance.now();
   const df = detFeats(ds, W, H);
   const lk = state.look ?? null;
   S.hist = S.hist.filter((h) => t - h.t <= 10); S.hist.unshift({ t, look: lk, df });
@@ -548,7 +572,8 @@ export async function look(video, state) {
   // guesses wander (the band then goes straight ahead, bent only by the lane finder)
   p.path = state.map ? predictPath(x, state.map, state.speed, pic) : null;
   if (p.path && state.map.slice(0, 3).every((v) => v != null && Math.abs(v) < 0.5)) p.path = p.path.map((y) => 0.3 * y); // map says straight: damp the wobble
-  p.lane = await laneLook(video, W, H);
+  p.lane = lane;
+  lap('trees', tTrees); lap('total'); T.together = together; LAST.times = T;
   // follow the directions when a turn is under 30 m away (as in training)
   const nv = x.slice(-10);
   if (nv[6] < 30 && (nv[1] || nv[2])) p.turn = nv[1] ? [0.75, 0.25, 0] : [0, 0.25, 0.75];
