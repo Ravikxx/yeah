@@ -3,19 +3,19 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610262143';
-import * as queue from './queue.js?v=202610262143';
-import * as coverage from './coverage.js?v=202610262143';
-import { findView } from './street.js?v=202610262143';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262143';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262143';
-import { coverageLines } from './street.js?v=202610262143';
-import { planTrip } from './directions.js?v=202610262143';
-import * as copilot from './copilot.js?v=202610262143';
-import { searchPlaces } from './api.js?v=202610262143';
-import { snapToTrack } from './geo.js?v=202610262143';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262143';
-import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610262143';
+import { pickMime } from './record.js?v=202610262317';
+import * as queue from './queue.js?v=202610262317';
+import * as coverage from './coverage.js?v=202610262317';
+import { findView } from './street.js?v=202610262317';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262317';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262317';
+import { coverageLines } from './street.js?v=202610262317';
+import { planTrip } from './directions.js?v=202610262317';
+import * as copilot from './copilot.js?v=202610262317';
+import { searchPlaces } from './api.js?v=202610262317';
+import { snapToTrack } from './geo.js?v=202610262317';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262317';
+import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610262317';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -1043,7 +1043,20 @@ function showCopilot(r, secs) {
 }
 
 // "(eyes 120 · cars 520 · lane 40 ms)": where one look's time went
-const DEBUG_TURN = new URLSearchParams(location.search).has('debugturn'); // add ?debugturn=1 before the # to see the sensors
+// The sensor / timing box: add ?debugturn=1 before the # in the address, or tap the GPS chip three times (it sticks until tapped three times again)
+let DEBUG_TURN = new URLSearchParams(location.search).has('debugturn');
+try { if (localStorage.getItem('waymark.debug') === '1') DEBUG_TURN = true; } catch { /* no storage */ }
+{
+  let taps = [];
+  document.getElementById('dGps')?.addEventListener('click', () => {
+    const now = performance.now(); taps = taps.filter((t) => now - t < 1500).concat(now);
+    if (taps.length < 3) return; taps = [];
+    DEBUG_TURN = !DEBUG_TURN;
+    try { localStorage.setItem('waymark.debug', DEBUG_TURN ? '1' : '0'); } catch { /* no storage */ }
+    document.getElementById('turnDbg')?.remove();
+    toast(DEBUG_TURN ? 'Sensor box on (tap the GPS chip 3 times to turn it off)' : 'Sensor box off');
+  });
+}
 // the last ~12 s of turn sensors (twice a second), attached to a "Co-pilot is wrong" tap so a bad turn can be looked at afterwards
 const TRACE = [];
 let traceN = 0;

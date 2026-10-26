@@ -16,10 +16,11 @@ const { chromium } = require('playwright');
   const errors = new Set();
   p.on('console', (m) => { if (m.type() === 'error' && /copilot/i.test(m.text())) errors.add(m.text().slice(0, 300)); });
   p.on('pageerror', (e) => errors.add(String(e).slice(0, 300)));
-  await p.goto(`${base}index.html?debugturn=1#/drive`);
+  await p.goto(`${base}index.html#/drive`);
   await p.waitForSelector('#driveStart', { timeout: 20000 });
   await p.click('#driveStart');
   await p.waitForTimeout(4000);
+  for (let i = 0; i < 3; i++) await p.click('#dGps'); // three taps on the GPS chip turn the sensor box on
   await p.click('#copilotBtn');
   // fake sensors: the compass turning right and the gyroscope reporting a turn, for ~3 s
   await p.evaluate(() => {

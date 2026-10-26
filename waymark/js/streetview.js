@@ -4,13 +4,13 @@
 // street when it was captured going that way. Drive plays the footage and
 // rolls on into the next piece.
 
-import * as stage from './stage.js?v=202610262143';
-import * as coverage from './coverage.js?v=202610262143';
-import { findView, viewOptions, headingAt } from './street.js?v=202610262143';
-import { atTime, atDistance } from './geo.js?v=202610262143';
-import { compass } from './directions.js?v=202610262143';
-import { mine } from './api.js?v=202610262143';
-import { toast, esc } from './ui.js?v=202610262143';
+import * as stage from './stage.js?v=202610262317';
+import * as coverage from './coverage.js?v=202610262317';
+import { findView, viewOptions, headingAt } from './street.js?v=202610262317';
+import { atTime, atDistance } from './geo.js?v=202610262317';
+import { compass } from './directions.js?v=202610262317';
+import { mine } from './api.js?v=202610262317';
+import { toast, esc } from './ui.js?v=202610262317';
 
 let view = null;
 let opts = null;
