@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261900';
-import * as queue from './queue.js?v=202610261900';
-import * as coverage from './coverage.js?v=202610261900';
-import { findView } from './street.js?v=202610261900';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261900';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261900';
-import { coverageLines } from './street.js?v=202610261900';
-import { planTrip } from './directions.js?v=202610261900';
-import * as copilot from './copilot.js?v=202610261900';
-import { searchPlaces } from './api.js?v=202610261900';
-import { snapToTrack } from './geo.js?v=202610261900';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261900';
+import { pickMime } from './record.js?v=202610261901';
+import * as queue from './queue.js?v=202610261901';
+import * as coverage from './coverage.js?v=202610261901';
+import { findView } from './street.js?v=202610261901';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261901';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261901';
+import { coverageLines } from './street.js?v=202610261901';
+import { planTrip } from './directions.js?v=202610261901';
+import * as copilot from './copilot.js?v=202610261901';
+import { searchPlaces } from './api.js?v=202610261901';
+import { snapToTrack } from './geo.js?v=202610261901';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261901';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
