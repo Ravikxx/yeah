@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261916';
-import * as queue from './queue.js?v=202610261916';
-import * as coverage from './coverage.js?v=202610261916';
-import { findView } from './street.js?v=202610261916';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261916';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261916';
-import { coverageLines } from './street.js?v=202610261916';
-import { planTrip } from './directions.js?v=202610261916';
-import * as copilot from './copilot.js?v=202610261916';
-import { searchPlaces } from './api.js?v=202610261916';
-import { snapToTrack } from './geo.js?v=202610261916';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261916';
+import { pickMime } from './record.js?v=202610261924';
+import * as queue from './queue.js?v=202610261924';
+import * as coverage from './coverage.js?v=202610261924';
+import { findView } from './street.js?v=202610261924';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261924';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261924';
+import { coverageLines } from './street.js?v=202610261924';
+import { planTrip } from './directions.js?v=202610261924';
+import * as copilot from './copilot.js?v=202610261924';
+import { searchPlaces } from './api.js?v=202610261924';
+import { snapToTrack } from './geo.js?v=202610261924';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261924';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -721,9 +721,20 @@ async function loopCopilot() {
 
 // The road's shape ahead from the directions' route line: its left offset at 5..40 m,
 // measured from the route point next to you along the way the bike points (as in training).
+// The way you're pointing, in the way you travel: the compass minus how this phone sits on the bars
+// (learned while riding). Works stopped, at walking speed and mid-turn; the GPS bearing only
+// updates after ~8 m of riding, so it's stale in exactly those moments.
+function travelHeading() {
+  if (C.heading != null && C.offsets.length >= 5) {
+    const ref = C.offsets[0], off = ref + C.offsets.reduce((a, o) => a + wrap(o - ref), 0) / C.offsets.length;
+    return (C.heading - off + 360) % 360;
+  }
+  return S.heading;
+}
+
 function mapAhead() {
-  const ahead = copilot.pathAhead(), pts = M.plan?.pts;
-  if (!ahead || !pts?.length || M.lastD == null || S.heading == null) return null;
+  const ahead = copilot.pathAhead(), pts = M.plan?.pts, hd = travelHeading();
+  if (!ahead || !pts?.length || M.lastD == null || hd == null) return null;
   const at = (d) => {
     const i = Math.max(1, pts.findIndex((p) => p.d >= d));
     if (pts[i]?.d == null || pts[i].d < d) return null;
@@ -731,7 +742,7 @@ function mapAhead() {
     return { lat: a.lat + (b.lat - a.lat) * f, lng: a.lng + (b.lng - a.lng) * f };
   };
   const p0 = at(M.lastD); if (!p0) return null;
-  const h = S.heading * Math.PI / 180, kx = 111320 * Math.cos(p0.lat * Math.PI / 180);
+  const h = hd * Math.PI / 180, kx = 111320 * Math.cos(p0.lat * Math.PI / 180);
   return ahead.mapd.map((d) => {
     const q = at(M.lastD + d);
     return q ? ((q.lng - p0.lng) * kx) * -Math.cos(h) + ((q.lat - p0.lat) * 111320) * Math.sin(h) : null;
@@ -903,12 +914,24 @@ function steadyPath(r) {
     : [0, 0, 0];
   // with directions on, steer like the simulator: the driver model, given the route's shape from the map;
   // without directions (Free ride) there's no route to plan from, so the lane finder places the band
-  const now = r.path ? r.path : r.lane ? arc : [0, 0, 0];
+  // the driver model was only trained moving (2+ m/s); slower than that, show the route itself
+  let planned = r.path;
+  if (planned && v < 1.5) {
+    const mp = mapAhead(), ds = copilot.pathAhead()?.dist || [5, 10, 15];
+    planned = mp && mp.slice(0, 3).every((y) => y != null) ? mp.slice(0, 3).map((y, i) => Math.max(-0.8 * ds[i], Math.min(0.8 * ds[i], y))) : null;
+  }
+  const now = planned ? planned : r.lane ? arc : [0, 0, 0];
   const keep = PB.steady && performance.now() - PB.steady.at < 3000;
   const w = turning ? 0.6 : 0.5;
   const ys = keep ? now.map((y, i) => w * y + (1 - w) * PB.steady.ys[i]) : now;
-  if (r.lane && !r.path) r.lane = { ...r.lane, x: keep && PB.steady.lane ? r.lane.x.map((x, i) => 0.5 * x + 0.5 * PB.steady.lane[i]) : r.lane.x };
-  PB.steady = { ys, lane: r.lane?.x, at: performance.now() };
+  if (r.lane && !planned) {
+    // the lane finder jitters from look to look on a bumpy road: ease toward each new answer, and don't
+    // let the middle point swing out past near and far (that's the S-shape / snake)
+    const x = keep && PB.steady.lane ? r.lane.x.map((v, i) => 0.35 * v + 0.65 * PB.steady.lane[i]) : r.lane.x.slice();
+    const lo = Math.min(x[0], x[2]) - 0.02, hi = Math.max(x[0], x[2]) + 0.02; x[1] = Math.max(lo, Math.min(hi, x[1]));
+    r.lane = { ...r.lane, x };
+  }
+  PB.steady = { ys, lane: planned ? null : r.lane?.x, at: performance.now() };
   return ys;
 }
 
