@@ -10,14 +10,18 @@
 //   zoomed look at the sign area (stop sign, light colour); speed limit, bike target   5+2
 //   directions: next turn, metres to it, metres to destination                        10
 // then scaler + PCA on the picture part, and gradient-boosted trees.
+//
+// Driver path (waymark-ai/v2/path.py, path.json): where you'll be 5, 10 and 15 m ahead
+// (metres left of where the bike points), from the same picture summary, signs, cars and
+// directions, plus the road's shape ahead from the directions' route line and your speed.
 
 const ORT = new URL('../ai/ort/', import.meta.url).href; // onnxruntime-web 1.20.1, hosted here (multi-core mode can't load its helpers from another site)
-const FILES = { resnet: 'ai/model/resnet18.onnx', detector: 'ai/model/detector.onnx', trees: 'ai/model/model.json?v=4' }; // bump ?v= when retrained
+const FILES = { resnet: 'ai/model/resnet18.onnx', detector: 'ai/model/detector.onnx', trees: 'ai/model/model.json?v=4', path: 'ai/model/path.json?v=1' }; // bump ?v= when retrained
 const CACHE = 'waymark-copilot-v2';
 const COCO = { 13: 'stop', 10: 'light', 3: 'car', 8: 'car', 6: 'car', 4: 'car' };
 const CROP = 0.72, MEAN = [0.485, 0.456, 0.406], STD = [0.229, 0.224, 0.225];
 
-let ort = null, R = null, D = null, M = null;
+let ort = null, R = null, D = null, M = null, P = null;
 
 // ---------- loading ----------
 async function fetchCached(url, onBytes) {
@@ -72,6 +76,8 @@ export async function load(onProgress = () => {}) {
   R = await makeSession(r, 'resnet');
   D = await makeSession(d, 'detector');
   M = JSON.parse(new TextDecoder().decode(t));
+  // the driver path is optional: the co-pilot works without it
+  try { P = JSON.parse(new TextDecoder().decode(await fetchCached(FILES.path, () => {}))); } catch (e) { console.warn('co-pilot: no driver path', e); }
   // how many inputs this model takes (older ones have no zoom / speed-limit inputs)
   let top = 0;
   for (const k of ['speed', 'slow', 'turn']) for (const it of M[k].trees) for (const t of it) for (const n of t) if (!n[6]) top = Math.max(top, n[0]);
@@ -450,19 +456,33 @@ function trees(model, z) {
   return raw;
 }
 
-export function predictRow(x) { // x: the 1056 inputs; exported for the self-test
-  const img = M.img, z = [];
+function summary(x) { // the picture part of x through the scaler + PCA
+  const z = [];
   for (let j = 0; j < M.pca.length; j++) {
     let s = 0; const row = M.pca[j];
-    for (let i = 0; i < img; i++) s += ((x[i] - M.mean[i]) / M.scale[i] - M.pcaMean[i]) * row[i];
+    for (let i = 0; i < M.img; i++) s += ((x[i] - M.mean[i]) / M.scale[i] - M.pcaMean[i]) * row[i];
     z.push(s);
   }
-  for (let i = img; i < x.length; i++) z.push(x[i] == null ? NaN : x[i]);
+  return z;
+}
+
+export function predictRow(x, pic = summary(x)) { // x: the 1063 inputs; exported for the self-test
+  const z = pic.slice();
+  for (let i = M.img; i < x.length; i++) z.push(x[i] == null ? NaN : x[i]);
   const speed = Math.min(M.maxSpeed, Math.max(0, trees(M.speed, z)[0]));
   const slow = 1 / (1 + Math.exp(-trees(M.slow, z)[0]));
   const tr = trees(M.turn, z), mx = Math.max(...tr), ex = tr.map((v) => Math.exp(v - mx)), sum = ex.reduce((a, b) => a + b, 0);
   return { speed, slow, turn: ex.map((v) => v / sum) };
 }
+
+// The driver's path: metres left (+) / right (-) at 5, 10, 15 m ahead. map: the route line's
+// left offset at 5, 10, 15, 25, 40 m (null where unknown); speed in m/s. null without the path model.
+export function predictPath(x, map, speed, pic = summary(x)) {
+  if (!P || !map) return null;
+  const z = [...pic, ...P.keep.map((i) => (x[i] == null ? NaN : x[i])), ...map.map((v) => (v == null ? NaN : v)), speed ?? 0];
+  return P.path.map((t) => trees(t, z)[0]);
+}
+export const pathAhead = () => (P ? { dist: P.dist, mapd: P.mapd } : null);
 
 // ---------- one look ----------
 // recent: the last few full looks {t, emb, dets, look}, to compare with the one ~1 s ago as in training
@@ -476,7 +496,8 @@ function zoomFeats(t) {
   return [z ? z.stop : 0, z ? z.width : 0, recent, z ? z.red : 0, z ? z.green : 0];
 }
 
-// video: the camera <video>; state: { look (deg or null), nav: {instruction, inM, leftM} or null, limit (mph) }
+// video: the camera <video>; state: { look (deg or null), nav: {instruction, inM, leftM} or null, limit (mph),
+//   map: route line's left offsets at 5..40 m or null, speed (m/s) }
 export async function look(video, state) {
   const t = performance.now() / 1000;
   const img = grab(video), { W, H } = img;
@@ -497,7 +518,9 @@ export async function look(video, state) {
   const x = [...emb, ...emb.map((v, i) => v - prev[i]), ...df, Math.max(0, ...recent.map((d) => d.score)), recent.length,
     ...scanFeats(S.hist, t), ...mo, ...(M.extra > 32 ? [...zoomFeats(t), state.limit ?? 25, Math.min(state.limit ?? 25, 20)] : []), ...navFeats(state.nav)];
   S.recent = [...S.recent.filter((q) => t - q.t <= 2), { t, emb, dets: ds, look: lk }];
-  const p = predictRow(x);
+  const pic = summary(x);
+  const p = predictRow(x, pic);
+  p.path = predictPath(x, state.map, state.speed, pic);
   // follow the directions when a turn is under 30 m away (as in training)
   const nv = x.slice(-10);
   if (nv[6] < 30 && (nv[1] || nv[2])) p.turn = nv[1] ? [0.75, 0.25, 0] : [0, 0.25, 0.75];
@@ -506,4 +529,4 @@ export async function look(video, state) {
       carAhead: df[7] > 0.12 }, // moving-car alerts come from the tracker (makeTracker)
     dets: ds, frame: { g: gray(img.px, W, H), W, H } };
 }
-export const _test = { gray, matchBox, carMotion, makeTracker, detect: (img) => detect(img) };
+export const _test = { gray, matchBox, carMotion, makeTracker, detect: (img) => detect(img), useModels: (m, p) => { M = m; P = p; } };

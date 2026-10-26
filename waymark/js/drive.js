@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610252308';
-import * as queue from './queue.js?v=202610252308';
-import * as coverage from './coverage.js?v=202610252308';
-import { findView } from './street.js?v=202610252308';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610252308';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610252308';
-import { coverageLines } from './street.js?v=202610252308';
-import { planTrip } from './directions.js?v=202610252308';
-import * as copilot from './copilot.js?v=202610252308';
-import { searchPlaces } from './api.js?v=202610252308';
-import { snapToTrack } from './geo.js?v=202610252308';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610252308';
+import { pickMime } from './record.js?v=202610260008';
+import * as queue from './queue.js?v=202610260008';
+import * as coverage from './coverage.js?v=202610260008';
+import { findView } from './street.js?v=202610260008';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610260008';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610260008';
+import { coverageLines } from './street.js?v=202610260008';
+import { planTrip } from './directions.js?v=202610260008';
+import * as copilot from './copilot.js?v=202610260008';
+import { searchPlaces } from './api.js?v=202610260008';
+import { snapToTrack } from './geo.js?v=202610260008';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610260008';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -612,6 +612,7 @@ function stopCopilot() {
   CP.on = false;
   document.getElementById('copilotBtn')?.setAttribute('aria-pressed', 'false');
   const box = document.getElementById('copilot'); if (box) box.hidden = true;
+  drawPath(null);
   try { speechSynthesis.cancel(); } catch { /* no speech */ }
 }
 
@@ -643,7 +644,8 @@ async function loopCopilot() {
       try {
         const key = CP.key = keyMoment(last);
         if (t0 >= nextFull) { op = 'look';
-          last = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null, limit: limitNow() });
+          last = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null, limit: limitNow(), map: mapAhead(), speed: S.gpsSpeed ?? 0 });
+          drawPath(last.path);
           const done = performance.now();
           CP.secs = (done - t0) / 1000; lastDet = done; feed(last, done);
           // key moments: a look every second. Otherwise looks in pairs 1 s apart (so the model's
@@ -669,6 +671,42 @@ async function loopCopilot() {
     }
     await new Promise((r) => setTimeout(r, Math.max(30, 120 - (performance.now() - t0))));
   }
+}
+
+// The road's shape ahead from the directions' route line: its left offset at 5..40 m,
+// measured from the route point next to you along the way the bike points (as in training).
+function mapAhead() {
+  const ahead = copilot.pathAhead(), pts = M.plan?.pts;
+  if (!ahead || !pts?.length || M.lastD == null || S.heading == null) return null;
+  const at = (d) => {
+    const i = Math.max(1, pts.findIndex((p) => p.d >= d));
+    if (pts[i]?.d == null || pts[i].d < d) return null;
+    const a = pts[i - 1], b = pts[i], f = b.d > a.d ? (d - a.d) / (b.d - a.d) : 0;
+    return { lat: a.lat + (b.lat - a.lat) * f, lng: a.lng + (b.lng - a.lng) * f };
+  };
+  const p0 = at(M.lastD); if (!p0) return null;
+  const h = S.heading * Math.PI / 180, kx = 111320 * Math.cos(p0.lat * Math.PI / 180);
+  return ahead.mapd.map((d) => {
+    const q = at(M.lastD + d);
+    return q ? ((q.lng - p0.lng) * kx) * -Math.cos(h) + ((q.lat - p0.lat) * 111320) * Math.sin(h) : null;
+  });
+}
+
+// Draws the driver's path (left offsets at 5, 10, 15 m) on the camera view: a phone on the
+// handlebars ~1.1 m up, looking level, so a point d m ahead sits f·1.1/d below the middle.
+function drawPath(path) {
+  let cv = document.getElementById('cpPath');
+  if (!path || !CP.on || !el.dcam?.videoWidth) { if (cv) cv.hidden = true; return; }
+  if (!cv) { cv = document.createElement('canvas'); cv.id = 'cpPath'; cv.className = 'cp-path'; el.dcam.after(cv); }
+  const ew = el.dcam.clientWidth, eh = el.dcam.clientHeight, vw = el.dcam.videoWidth, vh = el.dcam.videoHeight;
+  cv.width = ew * devicePixelRatio; cv.height = eh * devicePixelRatio; cv.hidden = false;
+  const g = cv.getContext('2d'); g.scale(devicePixelRatio, devicePixelRatio);
+  const s = Math.max(ew / vw, eh / vh), ox = (ew - vw * s) / 2, oy = (eh - vh * s) / 2; // object-fit: cover
+  const f = vw / 2 / Math.tan(hfov() * Math.PI / 360);
+  const dist = copilot.pathAhead().dist;
+  const pts = [[2, 0], ...dist.map((d, i) => [d, path[i]])].map(([d, y]) => [ox + (vw / 2 - f * y / d) * s, oy + (vh / 2 + f * 1.1 / d) * s]);
+  g.lineWidth = 10; g.lineCap = g.lineJoin = 'round'; g.strokeStyle = 'rgba(40, 220, 140, 0.75)';
+  g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke();
 }
 
 // A key moment: something's happening, so the model looks every second (as the

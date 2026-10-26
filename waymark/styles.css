@@ -721,3 +721,5 @@ fieldset.field legend { padding: 0; margin-bottom: 6px; }
 .cp-voice { min-width: 36px; min-height: 36px; border-radius: 10px; border: 1px solid rgb(255 255 255 / .35); background: transparent; color: #fff; cursor: pointer; }
 .cp-voice[aria-pressed="true"] { background: #5B8EFF; border-color: #5B8EFF; }
 @media (max-width: 600px) { .copilot { top: auto; bottom: calc(220px + env(safe-area-inset-bottom, 0px)); } }
+/* the co-pilot's drawn path (driver model), over the Drive camera */
+.drive .cp-path { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
