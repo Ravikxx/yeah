@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261548';
-import * as queue from './queue.js?v=202610261548';
-import * as coverage from './coverage.js?v=202610261548';
-import { findView } from './street.js?v=202610261548';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261548';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261548';
-import { coverageLines } from './street.js?v=202610261548';
-import { planTrip } from './directions.js?v=202610261548';
-import * as copilot from './copilot.js?v=202610261548';
-import { searchPlaces } from './api.js?v=202610261548';
-import { snapToTrack } from './geo.js?v=202610261548';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261548';
+import { pickMime } from './record.js?v=202610261602';
+import * as queue from './queue.js?v=202610261602';
+import * as coverage from './coverage.js?v=202610261602';
+import { findView } from './street.js?v=202610261602';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261602';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261602';
+import { coverageLines } from './street.js?v=202610261602';
+import { planTrip } from './directions.js?v=202610261602';
+import * as copilot from './copilot.js?v=202610261602';
+import { searchPlaces } from './api.js?v=202610261602';
+import { snapToTrack } from './geo.js?v=202610261602';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261602';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -261,6 +261,22 @@ function stopCompass() {
 function onOrient(e) {
   if (Number.isFinite(e.webkitCompassHeading)) C.heading = e.webkitCompassHeading; // iPhone
   else if (e.absolute && Number.isFinite(e.alpha)) C.heading = (360 - e.alpha) % 360; // Android
+  if (C.heading != null) { // the last 1.5 s, for how fast you're turning
+    const now = performance.now();
+    (C.hist ||= []).push({ t: now, h: C.heading });
+    while (C.hist.length && now - C.hist[0].t > 1500) C.hist.shift();
+  }
+}
+
+// How fast you're actually turning (degrees a second, + = right), from the compass over the last
+// second, only while moving (2+ m/s): a quick handlebar wiggle or looking around while stopped
+// doesn't count. null when unknown.
+function turnRate() {
+  const h = C.hist, v = S.gpsSpeed ?? 0, now = performance.now();
+  if (!h || h.length < 6 || v < 2 || now - h[h.length - 1].t > 400) return null;
+  const old = h.find((q) => now - q.t <= 1100) || h[0], dt = (h[h.length - 1].t - old.t) / 1000;
+  if (dt < 0.6) return null;
+  return (((h[h.length - 1].h - old.h + 540) % 360) - 180) / dt;
 }
 
 function lookAt(fix, gpsSpeed) {
@@ -775,12 +791,12 @@ function pathFrame(now) {
     const y = yAt(Math.max(2, d)), dy = (yAt(Math.min(end, Math.max(2, d) + 0.25)) - yAt(Math.max(2, d - 0.25))) / 0.5, n = Math.hypot(1, dy);
     C.push({ d, y, nx: -dy / n, ny: 1 / n });
   }
-  // the lane finder (trained on your taps) places the band: it goes through its three points (where you'd
-  // ride on the near / mid / far lines, as on the marking pages), starting from the middle of the bottom
-  // of the screen; above the far line the driver path (with directions) takes over
+  // the lane finder (trained on your taps) places the band: it goes through its near point (where you'd
+  // ride on the near line, as on the marking pages) from the middle of the bottom of the screen, and
+  // mostly through its mid and far points; the rest comes from your motion (the turn you're in)
   const ln = opts.lane;
   if (ln && C.length > 2) {
-    const [lcx, lcy, lcw, lch] = ln.crop, K = [1, 1, 1];
+    const [lcx, lcy, lcw, lch] = ln.crop, K = [1, 0.75, 0.5]; // further out, the turn you're in counts more
     const pts = ln.rows.map((row, i) => {
       const X = ox + (lcx + ln.x[i] * lcw) * s, Y = oy + (lcy + row * lch) * s;
       const c = C.reduce((a, q) => (Math.abs(Praw(q.d, q.y)[1] - Y) < Math.abs(Praw(a.d, a.y)[1] - Y) ? q : a));
@@ -853,7 +869,13 @@ function pathFrame(now) {
 // a straight base it bends through its points. The map-based driver path fought it (calling a turn
 // still 90 m away right under the bike), so it only draws when the lane finder isn't available.
 function steadyPath(r) {
-  const now = r.lane ? [0, 0, 0] : r.path || [0, 0, 0];
+  // with the lane finder the base is where your current motion takes you: straight, or, when you're
+  // already turning (6+ degrees a second while moving), the arc you're on (radius = speed / turn rate)
+  const rate = turnRate(), v = S.gpsSpeed ?? 0;
+  const arc = rate != null && Math.abs(rate) >= 6
+    ? (copilot.pathAhead()?.dist || [5, 10, 15]).map((d) => { const k = (rate * Math.PI / 180) / v; return Math.max(-0.8 * d, Math.min(0.8 * d, -k * d * d / 2)); })
+    : [0, 0, 0];
+  const now = r.lane ? arc : r.path || [0, 0, 0];
   const keep = PB.steady && performance.now() - PB.steady.at < 3000;
   const ys = keep ? now.map((y, i) => 0.5 * y + 0.5 * PB.steady.ys[i]) : now;
   if (r.lane) r.lane = { ...r.lane, x: keep && PB.steady.lane ? r.lane.x.map((x, i) => 0.5 * x + 0.5 * PB.steady.lane[i]) : r.lane.x };

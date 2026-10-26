@@ -6,7 +6,7 @@
 // and show the video frame from that moment. Driving a street once each way
 // gives you both directions, like the two passes of a street-view car.
 
-import { prepareTrack, atDistance, bearing, turnAngle, distance, snapToTrack } from './geo.js?v=202610261548';
+import { prepareTrack, atDistance, bearing, turnAngle, distance, snapToTrack } from './geo.js?v=202610261602';
 
 const SAMPLE_M = 5;       // spacing of indexed samples along each recording
 const CELL = 0.0003;      // grid cell in degrees (~33 m north-south)
