@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610261641';
-import * as queue from './queue.js?v=202610261641';
-import * as coverage from './coverage.js?v=202610261641';
-import { findView } from './street.js?v=202610261641';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261641';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261641';
-import { coverageLines } from './street.js?v=202610261641';
-import { planTrip } from './directions.js?v=202610261641';
-import * as copilot from './copilot.js?v=202610261641';
-import { searchPlaces } from './api.js?v=202610261641';
-import { snapToTrack } from './geo.js?v=202610261641';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261641';
+import { pickMime } from './record.js?v=202610261644';
+import * as queue from './queue.js?v=202610261644';
+import * as coverage from './coverage.js?v=202610261644';
+import { findView } from './street.js?v=202610261644';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610261644';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610261644';
+import { coverageLines } from './street.js?v=202610261644';
+import { planTrip } from './directions.js?v=202610261644';
+import * as copilot from './copilot.js?v=202610261644';
+import { searchPlaces } from './api.js?v=202610261644';
+import { snapToTrack } from './geo.js?v=202610261644';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610261644';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -1028,6 +1028,13 @@ function wireStopWhy() {
   grid.innerHTML = STOP_REASONS.map(([code, label, sub]) => `<button type="button" data-code="${code}">${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ''}</button>`).join('');
   document.getElementById('stopWhy').addEventListener('click', () => { other.hidden = true; sheet.hidden = !sheet.hidden; });
   document.getElementById('stopClose').addEventListener('click', () => { sheet.hidden = true; });
+  const mini = document.getElementById('stopMini');
+  const setMini = (on) => { sheet.classList.toggle('mini', on); mini.setAttribute('aria-pressed', String(on)); mini.ariaLabel = on ? 'Make bigger' : 'Make smaller'; };
+  try { setMini(localStorage.getItem('waymark.stopMini') === '1'); } catch {}
+  mini.addEventListener('click', () => {
+    const on = !sheet.classList.contains('mini'); setMini(on);
+    try { localStorage.setItem('waymark.stopMini', on ? '1' : '0'); } catch {}
+  });
   grid.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-code]'); if (!b) return;
     const [code, label, sub] = STOP_REASONS.find((r) => r[0] === b.dataset.code);
