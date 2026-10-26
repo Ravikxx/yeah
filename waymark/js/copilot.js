@@ -161,6 +161,8 @@ async function laneRun(inp) {
   } catch (e) { console.warn('co-pilot: lane finder failed', e); return null; }
 }
 const laneLook = (video, W, H) => laneRun(laneInput(video, W, H));
+// the lane finder on its own, so the band can follow the road several times a second between the heavy looks
+export const laneOnly = (video) => laneRun(laneInput(video, video.videoWidth, video.videoHeight));
 
 function hsv255(r, g, b) { // PIL's HSV: all three in 0..255
   const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;

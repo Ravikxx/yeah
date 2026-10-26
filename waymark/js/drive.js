@@ -3,19 +3,19 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610262059';
-import * as queue from './queue.js?v=202610262059';
-import * as coverage from './coverage.js?v=202610262059';
-import { findView } from './street.js?v=202610262059';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262059';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262059';
-import { coverageLines } from './street.js?v=202610262059';
-import { planTrip } from './directions.js?v=202610262059';
-import * as copilot from './copilot.js?v=202610262059';
-import { searchPlaces } from './api.js?v=202610262059';
-import { snapToTrack } from './geo.js?v=202610262059';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262059';
-import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610262059';
+import { pickMime } from './record.js?v=202610262103';
+import * as queue from './queue.js?v=202610262103';
+import * as coverage from './coverage.js?v=202610262103';
+import { findView } from './street.js?v=202610262103';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610262103';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610262103';
+import { coverageLines } from './street.js?v=202610262103';
+import { planTrip } from './directions.js?v=202610262103';
+import * as copilot from './copilot.js?v=202610262103';
+import { searchPlaces } from './api.js?v=202610262103';
+import { snapToTrack } from './geo.js?v=202610262103';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610262103';
+import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610262103';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -697,7 +697,7 @@ async function loopCopilot() {
   // Cars are tracked several times a second (cheap); the detector finds new cars about once a
   // second; the full model look and the zoomed sign look take turns every couple of seconds.
   const T = copilot.makeTracker();
-  let last = null, lastDet = 0, nextFull = 0, lastZoom = -1e9, pairStep = 0;
+  let last = null, lastDet = 0, nextFull = 0, lastZoom = -1e9, pairStep = 0, lastLane = 0, laneEvery = 200;
   const feed = (r, now) => { T.addDetections(r.dets, r.frame.g, r.frame.W, r.frame.H, now / 1000); track(r.frame, now); };
   const track = (fr, now) => {
     const cars = T.update(fr.g, now / 1000, S.gpsSpeed ?? 0, hfov(), fr.W, fr.H);
@@ -737,6 +737,11 @@ async function loopCopilot() {
           if (sg.light) CP.light = { ...sg.light, at: lastZoom };
         } else if (t0 - lastDet > 1000 && nextFull - t0 > 600) { op = 'detect';
           const r = await copilot.detectFrame(el.dcam); lastDet = performance.now(); feed(r, lastDet);
+        } else if (last?.lane && t0 - lastLane > laneEvery && nextFull - t0 > 400) { op = 'lane';
+          // the lane finder alone (about 50 ms): the band follows the road several times a second between looks.
+          // It never delays a look, and backs off if it's slow (at most a quarter of the time).
+          const ln = await copilot.laneOnly(el.dcam); lastLane = performance.now(); laneEvery = Math.max(200, 4 * (lastLane - t0));
+          if (ln) { CP.laneN = (CP.laneN || 0) + 1; last = { ...last, lane: ln, stamp: lastLane }; CP.lastR = last; drawPath(steadyPath({ ...last }), pathOpts(last)); }
         } else {
           track(copilot.frameGray(el.dcam), t0);
         }
@@ -1034,7 +1039,7 @@ function traceTick() {
   let el = document.getElementById('turnDbg');
   if (!el) { el = document.createElement('pre'); el.id = 'turnDbg'; el.style.cssText = 'position:fixed;left:8px;right:8px;bottom:250px;z-index:60;margin:0;padding:6px 8px;font:11px/1.3 ui-monospace,monospace;color:#9f9;background:rgba(0,0,0,.65);border-radius:8px;pointer-events:none;white-space:pre-wrap'; document.body.append(el); }
   const f = (x) => (x == null ? '–' : Math.round(x));
-  el.textContent = `turn ${f(CP.rateF)}°/s  gyro ${f(g?.gy)}  compass ${f(g?.comp)}  sign ${g?.sg ?? 0}  speed ${S.gpsSpeed == null ? '–' : (S.gpsSpeed * 2.237).toFixed(1)} mph\ngyro ${GY.on ? 'on' : 'OFF'} (${GY.hist.length})  compass ${C.heading == null ? 'OFF' : Math.round(C.heading) + '°'} (${C.hist?.length ?? 0})`;
+  el.textContent = `turn ${f(CP.rateF)}°/s  gyro ${f(g?.gy)}  compass ${f(g?.comp)}  sign ${g?.sg ?? 0}  speed ${S.gpsSpeed == null ? '–' : (S.gpsSpeed * 2.237).toFixed(1)} mph\ngyro ${GY.on ? 'on' : 'OFF'} (${GY.hist.length})  lane updates ${CP.laneN || 0}  compass ${C.heading == null ? 'OFF' : Math.round(C.heading) + '°'} (${C.hist?.length ?? 0})`;
 }
 function traceText() { // 1 s steps, newest last: rate:gyro:compass
   const now = performance.now(), out = [];

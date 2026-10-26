@@ -33,13 +33,17 @@ const { chromium } = require('playwright');
   });
   let card = null;
   for (let i = 0; i < 10; i++) {
-    await p.waitForTimeout(5000);
+    await p.waitForTimeout(i ? 1500 : 10000);
     card = await p.evaluate(() => ({ alert: document.querySelector('#copilot .cp-alert')?.textContent, detail: document.querySelector('#copilot .cp-detail')?.textContent, ai: document.querySelector('#copilot .cp-ai')?.textContent }));
     if (card.ai && card.ai !== '–') break;
   }
   console.log(JSON.stringify(card));
+  const dbg = await p.evaluate(() => document.getElementById('turnDbg')?.textContent || '');
   await b.close();
   const bad = [...errors];
+  const laneN = Number((/lane updates (\d+)/.exec(dbg) || [])[1] || 0);
+  console.log('lane finder updates in ~10 s:', laneN);
+  if (laneN < 10) bad.push(`the band's lane finder only updated ${laneN} times in ~10 s (it should run several times a second)`);
   if (!/gyro on/.test(card.detail || '')) bad.push(`the gyroscope events never arrived (${card.detail})`);
   if (/problem/i.test(card.alert || '') || !card.ai || card.ai === '–') bad.push(`the co-pilot never produced a look (${card.alert}: ${card.detail})`);
   console.log(bad.length ? 'FAIL: ' + bad.join(' | ') : 'PASS');
