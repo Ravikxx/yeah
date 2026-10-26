@@ -1,7 +1,7 @@
-import { getRoute, getDirections, videoUrl, ownerToken, deleteRoute } from './api.js?v=202610260147';
-import { $, esc, makeMap, routeLine, pinIcon, dotIcon, toast, cueGlyph, arrowGlyph, modeWord } from './ui.js?v=202610260147';
-import { stepText, compass } from './directions.js?v=202610260147';
-import { prepareTrack, buildCues, atTime, snapToTrack, distance, bearing, formatDistance, formatDuration, formatClock } from './geo.js?v=202610260147';
+import { getRoute, getDirections, videoUrl, ownerToken, deleteRoute } from './api.js?v=202610260243';
+import { $, esc, makeMap, routeLine, pinIcon, dotIcon, toast, cueGlyph, arrowGlyph, modeWord, turnSignHtml } from './ui.js?v=202610260243';
+import { stepText, compass } from './directions.js?v=202610260243';
+import { prepareTrack, buildCues, atTime, snapToTrack, distance, bearing, formatDistance, formatDuration, formatClock } from './geo.js?v=202610260243';
 
 const GMAPS_MODE = { walk: 'walking', bike: 'bicycling', drive: 'driving' };
 const OFF_ROUTE_M = 40;
@@ -225,26 +225,22 @@ function renderSign(pos) {
   const next = ahead[0];
   let html;
   if (!next) {
-    html = signHtml(cueGlyph({ type: 'arrive' }), 'You have arrived', R.route.to || '');
+    html = turnSignHtml({ glyph: cueGlyph({ type: 'arrive' }), dist: 'You have arrived', road: R.route.to || '' });
   } else if (pos.d < 8 && pos.t < R.pts[0].t + 3) {
     const probe = R.pts.find((p) => p.d > 25) || R.pts[R.pts.length - 1];
     const dir = compass(bearing(R.pts[0], probe));
-    html = signHtml(arrowGlyph(0), `Head ${dir}`, next.type === 'arrive' ? `${formatDistance(next.d)} to go` : `then ${next.text.toLowerCase()} in ${formatDistance(next.d)}`);
+    html = turnSignHtml({ glyph: arrowGlyph(0), dist: `Head ${dir}`,
+      sub: next.type === 'arrive' ? `${formatDistance(next.d)} to go` : `Then ${next.text.toLowerCase()} in ${formatDistance(next.d)}` });
   } else {
+    // big distance (or "Now"), then what happens there
     const dist = next.d - pos.d;
     const now = dist < 12;
-    const title = next.type === 'arrive' ? (now ? next.text : 'Arriving') : next.text;
-    const sub = next.type === 'arrive'
-      ? (now ? 'Destination ahead' : `${R.route.to || 'Destination'} in ${formatDistance(dist)}`)
-      : now ? 'Now' : `In ${formatDistance(dist)}`;
-    html = signHtml(cueGlyph(next), title, sub);
+    const what = next.type === 'arrive' ? (now ? next.text : R.route.to || 'Destination') : next.text;
+    html = turnSignHtml({ glyph: cueGlyph(next), dist: now ? 'Now' : formatDistance(dist), road: what });
     el.sign.classList.toggle('is-now', now);
   }
   if (el.sign.innerHTML !== html) el.sign.innerHTML = html;
 }
-
-const signHtml = (glyph, title, sub) =>
-  `<span class="plate-glyph">${glyph}</span><span class="plate-text"><b>${esc(title)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span>`;
 
 // A note shows from ~20 m before its spot until ~5 s after.
 function renderNote(t, pos) {
@@ -305,7 +301,7 @@ function onFollowFix(pos) {
     if (R.lastD == null && toStart > OFF_ROUTE_M) {
       showBanner(`You’re ${formatDistance(toStart)} from the start. Tap Directions to start to get there.`, true);
     } else {
-      showBanner(`You’re ${formatDistance(snap.off)} off the route. Head back toward the amber line.`, true);
+      showBanner(`You’re ${formatDistance(snap.off)} off the route. Head back toward the blue line.`, true);
     }
     map.panTo([me.lat, me.lng]);
     return;

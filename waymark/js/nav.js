@@ -2,13 +2,13 @@
 // on the map and matched against your footage so you can preview the trip in
 // street view, or drive it live with the matching view and turn signs.
 
-import { planTrip } from './directions.js?v=202610260147';
-import { searchPlaces } from './api.js?v=202610260147';
-import * as coverage from './coverage.js?v=202610260147';
-import * as stage from './stage.js?v=202610260147';
-import { matchPlan, findView, headingAt } from './street.js?v=202610260147';
-import { prepareTrack, atDistance, snapToTrack, distance, bearing, formatDistance, formatDuration } from './geo.js?v=202610260147';
-import { $, esc, toast, navLine, pinIcon, arrowGlyph, cueGlyph, fitPadding } from './ui.js?v=202610260147';
+import { planTrip } from './directions.js?v=202610260243';
+import { searchPlaces } from './api.js?v=202610260243';
+import * as coverage from './coverage.js?v=202610260243';
+import * as stage from './stage.js?v=202610260243';
+import { matchPlan, findView, headingAt } from './street.js?v=202610260243';
+import { prepareTrack, atDistance, snapToTrack, distance, bearing, formatDistance, formatDuration } from './geo.js?v=202610260243';
+import { $, esc, toast, navLine, pinIcon, arrowGlyph, cueGlyph, fitPadding, turnSignHtml } from './ui.js?v=202610260243';
 
 let map, layer;
 let plan = null;          // current trip
@@ -187,8 +187,8 @@ function renderResult() {
       <div class="trip-head"><b>${esc(formatDuration(plan.duration))}</b><span>${esc(formatDistance(plan.distance))}</span></div>
       <div class="trip-cov"><div class="cov-bar"><span style="width:${pct}%"></span></div><p>${esc(covText)}</p></div>
       <div class="actions">
-        <a class="btn btn-primary" href="#/nav/preview">${pct > 0 ? 'Preview in street view' : 'Preview'}</a>
-        <a class="btn btn-nav" href="#/nav/live">Start</a>
+        <a class="btn" href="#/nav/preview">${pct > 0 ? 'Preview in street view' : 'Preview'}</a>
+        <a class="btn btn-primary" href="#/nav/live">Start</a>
       </div>
       <ol class="steps">${plan.steps.map((s) => `
         <li><span class="step-ico">${s.angle === 'arrive' ? cueGlyph({ type: 'arrive' }, 22) : arrowGlyph(s.angle, 22)}</span>
@@ -207,13 +207,11 @@ function nextStep(d) {
 
 function signFor(d) {
   const s = nextStep(d);
-  if (!s || plan.distance - d < 15) {
-    return `<span class="plate-glyph">${cueGlyph({ type: 'arrive' })}</span><span class="plate-text"><b>You have arrived</b></span>`;
-  }
+  if (!s || plan.distance - d < 15) return turnSignHtml({ glyph: cueGlyph({ type: 'arrive' }), dist: 'You have arrived' });
   const dist = s.at - d;
   const glyph = s.angle === 'arrive' ? cueGlyph({ type: 'arrive' }) : arrowGlyph(s.angle);
-  const sub = [dist < 20 ? 'Now' : `In ${formatDistance(dist)}`, s.name].filter(Boolean).join(' · ');
-  return `<span class="plate-glyph">${glyph}</span><span class="plate-text"><b>${esc(s.title)}</b><small>${esc(sub)}</small></span>`;
+  // big distance, then the street (or the instruction when the step has no street name)
+  return turnSignHtml({ glyph, dist: dist < 20 ? 'Now' : formatDistance(dist), road: s.name || s.title, sub: s.name ? s.title : '' });
 }
 
 function openNavStage(kind) {
@@ -358,7 +356,7 @@ async function onLiveFix(pos) {
   if (!snap || snap.off > 50) {
     N.off++;
     stage.setPosition(me.lat, me.lng, 0);
-    stage.setSign(`<span class="plate-text"><b>Off route</b><small>${snap ? `${esc(formatDistance(snap.off))} from the route` : ''}</small></span>`);
+    stage.setSign(turnSignHtml({ dist: 'Off route', sub: snap ? `${formatDistance(snap.off)} from the route` : '' }));
     if (N.off >= 2 && performance.now() - N.lastReroute > 15000) {
       N.lastReroute = performance.now();
       try {

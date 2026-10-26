@@ -3,18 +3,18 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610260147';
-import * as queue from './queue.js?v=202610260147';
-import * as coverage from './coverage.js?v=202610260147';
-import { findView } from './street.js?v=202610260147';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610260147';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610260147';
-import { coverageLines } from './street.js?v=202610260147';
-import { planTrip } from './directions.js?v=202610260147';
-import * as copilot from './copilot.js?v=202610260147';
-import { searchPlaces } from './api.js?v=202610260147';
-import { snapToTrack } from './geo.js?v=202610260147';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610260147';
+import { pickMime } from './record.js?v=202610260243';
+import * as queue from './queue.js?v=202610260243';
+import * as coverage from './coverage.js?v=202610260243';
+import { findView } from './street.js?v=202610260243';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610260243';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610260243';
+import { coverageLines } from './street.js?v=202610260243';
+import { planTrip } from './directions.js?v=202610260243';
+import * as copilot from './copilot.js?v=202610260243';
+import { searchPlaces } from './api.js?v=202610260243';
+import { snapToTrack } from './geo.js?v=202610260243';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610260243';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -896,8 +896,10 @@ function setCopilot({ alert, level = 'info', ai = '–', you = '–', odds = '',
   const box = document.getElementById('copilot');
   box.dataset.level = level;
   box.querySelector('.cp-alert').textContent = alert;
-  box.querySelector('.cp-ai').textContent = ai;
-  box.querySelector('.cp-you').textContent = you;
+  for (const [sel, v] of [['.cp-ai', ai], ['.cp-you', you]]) { // big number, small unit ("14 mph")
+    const [num, unit = ''] = String(v).split(' ');
+    const b = box.querySelector(sel); b.textContent = num; b.dataset.unit = unit;
+  }
   box.querySelector('.cp-odds').textContent = odds;
   box.querySelector('.cp-detail').textContent = detail;
 }
@@ -1104,8 +1106,9 @@ async function missionFix(fix) {
   if (!next) return;
   const dist = next.at - snap.d;
   const glyph = next.angle === 'arrive' ? cueGlyph({ type: 'arrive' }) : arrowGlyph(next.angle);
-  setMissionSign(`<span class="plate-glyph">${glyph}</span><span class="plate-text"><b>${esc(next.title)}</b>
-    <small>${esc([dist < 20 ? 'Now' : `In ${formatDistance(dist)}`, next.name].filter(Boolean).join(' · '))} · ${esc(formatDistance(left))} to go</small></span>`);
+  // turn card: big distance, then the street (or the instruction if the step has no street name)
+  setMissionSign(`<span class="plate-glyph">${glyph}</span><span class="plate-text"><b>${esc(dist < 20 ? 'Now' : formatDistance(dist))}</b>
+    <span class="plate-road">${esc(next.name || next.title)}</span><small>${esc([next.name ? next.title : '', `${formatDistance(left)} to go`].filter(Boolean).join(' · '))}</small></span>`);
 }
 
 function logNav(fix, cur, plan, next, d) {

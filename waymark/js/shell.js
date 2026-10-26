@@ -2,13 +2,13 @@
 // (bottom sheet on phones) with Explore / Directions / Routes / Mine, and the
 // Drive & capture button.
 
-import * as coverage from './coverage.js?v=202610260147';
-import * as queue from './queue.js?v=202610260147';
-import * as nav from './nav.js?v=202610260147';
-import { showRoutes, wireNearMe, showFootage, renderQueueLine, wireExport } from './routes.js?v=202610260147';
-import { coverageLines, coveredLength, findView } from './street.js?v=202610260147';
-import { $, esc, makeMap, drawCoverage, dotIcon } from './ui.js?v=202610260147';
-import { formatDistance } from './geo.js?v=202610260147';
+import * as coverage from './coverage.js?v=202610260243';
+import * as queue from './queue.js?v=202610260243';
+import * as nav from './nav.js?v=202610260243';
+import { showRoutes, wireNearMe, showFootage, renderQueueLine, wireExport } from './routes.js?v=202610260243';
+import { coverageLines, coveredLength, findView } from './street.js?v=202610260243';
+import { $, esc, makeMap, drawCoverage, dotIcon } from './ui.js?v=202610260243';
+import { formatDistance } from './geo.js?v=202610260243';
 
 const VIEW_KEY = 'waymark.view.v1';
 let map, covLayer, navLayer, pinsLayer, meMarker;
@@ -98,10 +98,11 @@ function renderStats() {
   const len = coveredLength(lines, (lat, lng) => b.contains([lat, lng]));
   const el = $('#covStats');
   if (!len.any) {
-    el.textContent = map.getZoom() < 11 ? 'Zoom in to see captured streets.' : 'No streets captured in this area yet.';
+    el.innerHTML = `<span class="stats-empty">${map.getZoom() < 11 ? 'Zoom in to see captured streets.' : 'No streets captured in this area yet.'}</span>`;
     return;
   }
-  el.innerHTML = `In view: <b>${esc(formatDistance(len.any))}</b> of street captured, <b>${esc(formatDistance(len.both))}</b> of it both ways. Tap a colored street to look around.`;
+  el.innerHTML = `<span class="stat"><b>${esc(formatDistance(len.any))}</b><small>captured in view</small></span>
+    <span class="stat"><b>${esc(formatDistance(len.both))}</b><small>of it both ways</small></span>`;
 }
 
 function onMapClick(e) {

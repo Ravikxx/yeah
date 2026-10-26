@@ -5,17 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Waymark</title>
 <meta name="description" content="Your own street view. Drive your streets with the camera on, look around anywhere you've been, and preview trips through your own footage.">
-<meta name="theme-color" content="#0B6B4F">
+<meta name="theme-color" content="#F2F3F5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0D0E11" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Atkinson+Hyperlegible:wght@400;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="styles.css?v=202610260147">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='9' fill='%230B6B4F'/%3E%3Cpath d='M18 42V22l12-12' fill='none' stroke='white' stroke-width='6'/%3E%3Cpath d='M36 4l2 14-14-2z' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css?v=202610260243">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='12' fill='%23171A20'/%3E%3Cpath d='M18 40V24l10-10' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M35 8l1.5 12.5L24 19z' fill='%233E6AE1' stroke='%233E6AE1' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
 </head>
 <body>
 <!-- Map app: full-screen map, floating panel (bottom sheet on phones) -->
@@ -26,8 +27,8 @@
     <button class="sheet-handle" id="sheetHandle" type="button" aria-label="Show more" aria-expanded="false"><span></span></button>
     <div class="panel-head">
       <a href="#/" class="brand" aria-label="Waymark home"><span class="brand-plate">
-        <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path d="M16 44V24l12-12" fill="none" stroke="currentColor" stroke-width="6"/><path d="M36 4l2 15-15-2z" fill="currentColor"/></svg>
-        Waymark
+        <span class="brand-mark"><svg viewBox="0 0 48 48" width="17" height="17" aria-hidden="true"><path d="M16 42V25l11-11" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M36 6l1.6 14.5L23 19z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="brand-word">Waymark</span>
       </span></a>
       <span class="pill" id="uploadPill" data-state="wait" hidden></span>
     </div>
@@ -44,20 +45,29 @@
           <p class="eyebrow">Your own street view</p>
           <h1>Be the <span class="nowrap">street-view</span> car.</h1>
           <p class="lede">Ride your streets with the camera on, once each way. Then look around any street you’ve covered and preview trips through your own footage.</p>
-          <a class="btn btn-rec btn-lg" href="#/drive"><span class="rec-dot" aria-hidden="true"></span>Drive &amp; capture</a>
+          <div class="hello-actions">
+            <a class="btn btn-rec btn-lg" href="#/drive"><span class="rec-dot" aria-hidden="true"></span>Drive &amp; capture</a>
+            <a class="btn btn-lg" href="#/directions">Directions</a>
+          </div>
         </div>
-        <div class="legend" aria-label="Map key">
-          <span><i class="lg lg-both"></i>Captured both ways</span>
-          <span><i class="lg lg-one"></i>One way so far</span>
-          <span><i class="lg lg-nav"></i>Your directions</span>
+        <div class="map-key">
+          <p class="stats" id="covStats"></p>
+          <div class="legend" aria-label="Map key">
+            <span><i class="lg lg-both"></i>Captured both ways</span>
+            <span><i class="lg lg-one"></i>One way so far</span>
+            <span><i class="lg lg-nav"></i>Your directions</span>
+          </div>
+          <p class="key-hint">Tap a colored street to look around.</p>
         </div>
-        <p class="stats" id="covStats"></p>
-        <ol class="how">
-          <li><b>Drive &amp; capture.</b> Mount your phone facing forward and go. Footage uploads in 2-minute pieces.</li>
-          <li><b>Come back the other way.</b> Amber streets have one direction. Ride them back and they turn green.</li>
-          <li><b>Tap a colored street</b> to look around. Step forward, turn around, or turn onto crossing streets.</li>
-          <li><b>Get directions</b> and preview the whole trip through your footage before you leave.</li>
-        </ol>
+        <div class="how-wrap">
+          <h2 class="section-title">How it works</h2>
+          <ol class="how">
+            <li><b>Drive &amp; capture.</b> Mount your phone facing forward and go. Footage uploads in 2-minute pieces.</li>
+            <li><b>Come back the other way.</b> Amber streets have one direction. Ride them back and they turn green.</li>
+            <li><b>Tap a colored street</b> to look around. Step forward, turn around, or turn onto crossing streets.</li>
+            <li><b>Get directions</b> and preview the whole trip through your footage before you leave.</li>
+          </ol>
+        </div>
       </section>
 
       <section class="pane" id="pane-directions" hidden>
@@ -71,7 +81,7 @@
               <button type="button" class="btn btn-ghost btn-sm" id="dirMe" hidden>Use my location</button></div>
             <div class="dir-row"><span class="dir-dot b" aria-hidden="true">B</span><button type="button" class="dir-field" id="dirTo">Tap the map to choose a destination</button></div>
             <button type="button" class="dir-swap" id="dirSwap" aria-label="Swap start and destination" title="Swap">
-              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M8 4v15M8 4L4 8M8 4l4 4M16 20V5M16 20l-4-4M16 20l4-4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M8 4v15M8 4L4 8M8 4l4 4M16 20V5M16 20l-4-4M16 20l4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
           </div>
           <div class="seg seg-sm" role="group" aria-label="Travel mode">
@@ -86,7 +96,7 @@
       <section class="pane" id="pane-routes" hidden>
         <div class="list-head">
           <h2>Routes</h2>
-          <button id="nearMe" class="btn btn-ghost btn-sm" type="button">Closest to me</button>
+          <button id="nearMe" class="btn btn-ghost btn-sm" type="button"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M20 4L3 11l7 3 3 7z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" stroke-linejoin="round"/></svg>Closest to me</button>
         </div>
         <p class="meta">Point-to-point walkthroughs with notes, like “which door to use”.</p>
         <a class="btn btn-sm" href="#/record"><span class="rec-dot" aria-hidden="true"></span>Record a route</a>
@@ -116,7 +126,7 @@
 
   <div class="map-tools">
     <button class="tool" id="locateBtn" type="button" aria-label="Show my location" title="Show my location">
-      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
     </button>
   </div>
   <p class="map-hint" id="mapHint" hidden>Zoom in to see captured streets</p>
@@ -129,10 +139,10 @@
 
   <div class="rec-intro" id="driveIntro">
     <form class="rec-intro-card" id="driveForm" onsubmit="return false">
-      <div class="plate plate-green plate-wide">
-        <span class="plate-glyph"><span class="rec-dot big" aria-hidden="true"></span></span>
-        <span class="plate-text"><b>Drive &amp; capture</b><small>Be the street-view car</small></span>
-      </div>
+      <header class="intro-head">
+        <span class="intro-icon"><span class="rec-dot big" aria-hidden="true"></span></span>
+        <div><h1 class="intro-title">Drive &amp; capture</h1><p class="intro-sub">Be the street-view car</p></div>
+      </header>
       <ol class="rec-steps">
         <li><b>Mount your phone facing forward.</b> Dashboard, handlebar or chest, upright or sideways, whichever keeps the lens clear of your bike’s screen. Pick 0.5× for the widest view.</li>
         <li><b>Look both ways at intersections.</b> Stop, turn the handlebars left for 2 seconds, then right for 2 seconds. Waymark notes where the camera pointed (it may ask for motion access), keeps those frames out of street view and labels them for training.</li>
@@ -159,7 +169,7 @@
       <button id="driveStart" class="btn btn-primary btn-lg" type="button">Turn on camera</button>
       <p class="fine" id="driveError" role="alert" hidden></p>
       <p class="fine">Uses about 4 MB of data per minute. Don’t touch your phone while driving; set it up before you go.</p>
-      <p class="fine">Version <span id="appVersion">202610260147</span></p>
+      <p class="fine">Version <span id="appVersion">202610260243</span></p>
       <a href="#/" class="btn btn-ghost">Cancel</a>
     </form>
   </div>
@@ -167,7 +177,7 @@
   <div class="rec-hud" id="driveHud" hidden>
     <div class="hud-top">
       <button class="hud-btn" id="driveClose" type="button" aria-label="Back to the map">
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2.5"/></svg>
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <div class="chips">
         <span class="chip" id="dGps" data-state="wait">Finding GPS…</span>
@@ -178,17 +188,20 @@
       </div>
       <div class="hud-map hud-map-lg" id="driveMap" aria-hidden="true"></div>
     </div>
-    <div class="copilot" id="copilot" role="status" aria-live="polite" hidden>
-      <div class="cp-alert">Getting ready…</div>
-      <div class="cp-speeds"><span><small>AI</small><b class="cp-ai">–</b></span><span><small>You</small><b class="cp-you">–</b></span></div>
-      <div class="cp-odds"></div>
-      <div class="cp-foot"><span class="cp-detail"></span>
-        <button type="button" class="cp-voice" id="copilotVoice" aria-pressed="false" aria-label="Speak the co-pilot's calls">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-        </button></div>
+    <div class="hud-stack">
+      <div class="mission-sign" id="missionSign" hidden></div>
+      <div class="copilot" id="copilot" role="status" aria-live="polite" hidden>
+        <div class="cp-alert">Getting ready…</div>
+        <div class="cp-speeds"><span><small>AI</small><b class="cp-ai">–</b></span><span><small>You</small><b class="cp-you">–</b></span></div>
+        <div class="cp-odds"></div>
+        <div class="cp-foot"><span class="cp-detail"></span>
+          <button type="button" class="cp-voice" id="copilotVoice" aria-pressed="false" aria-label="Speak the co-pilot's calls">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button></div>
+      </div>
     </div>
     <div class="loc-help" id="locHelp" role="alert" hidden></div>
-    <div class="mission-sign" id="missionSign" hidden></div>
+    <div class="hud-dock">
     <div class="street-status" id="streetStatus" role="status" hidden></div>
     <div class="mission-bar" id="missionBar">
       <button type="button" class="btn btn-on-dark btn-sm" id="missionMore" aria-expanded="false">Trip options</button>
@@ -210,11 +223,12 @@
         <button type="button" class="btn btn-on-dark btn-sm" id="missionEnd" hidden>End trip</button>
       </div>
     </div>
+    </div>
     <div class="place-sheet" id="placeSheet" role="dialog" aria-label="Choose a destination" hidden>
       <div class="place-head">
         <b>Where to?</b>
         <button type="button" class="hud-btn" id="placeClose" aria-label="Close">
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2.5"/></svg>
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
       <input type="search" id="placeQuery" placeholder="Search a place or address" autocomplete="off" enterkeyhint="search">
@@ -226,9 +240,8 @@
       <div class="hud-spacer"><div class="lens-pills" id="lensPills" role="group" aria-label="Lens" hidden></div></div>
       <button class="rec-btn" id="driveBtn" type="button" aria-label="Start capturing"><span></span></button>
       <div class="hud-spacer hud-spacer-end">
-        <button class="hud-btn hud-btn-label" id="driveFlip" type="button" hidden>
-          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9a8 8 0 0 1 14-3l2 2M20 15a8 8 0 0 1-14 3l-2-2" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M20 3v5h-5M4 21v-5h5" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>
-          Flip
+        <button class="hud-btn hud-btn-icon" id="driveFlip" type="button" aria-label="Flip camera" title="Flip camera" hidden>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9a8 8 0 0 1 14-3l2 2M20 15a8 8 0 0 1-14 3l-2-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M20 3v5h-5M4 21v-5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </button>
       </div>
     </div>
@@ -236,10 +249,10 @@
 
   <div class="rec-intro" id="driveDone" hidden>
     <div class="rec-intro-card">
-      <div class="plate plate-green plate-wide">
-        <span class="plate-glyph"><svg viewBox="0 0 48 48" width="44" height="44" aria-hidden="true"><path d="M10 25l9 9 19-20" fill="none" stroke="currentColor" stroke-width="6"/></svg></span>
-        <span class="plate-text"><b>Capture saved</b><small>Your streets are on the map</small></span>
-      </div>
+      <header class="intro-head">
+        <span class="intro-icon is-ok"><svg viewBox="0 0 48 48" width="28" height="28" aria-hidden="true"><path d="M11 25l9 9 18-19" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <div><h1 class="intro-title">Capture saved</h1><p class="intro-sub">Your streets are on the map</p></div>
+      </header>
       <p id="driveSummary" class="done-text"></p>
       <div class="actions">
         <a class="btn btn-primary btn-lg" href="#/">See it on the map</a>
@@ -260,7 +273,7 @@
 
   <div class="stage-top">
     <a class="hud-btn" id="stageExit" href="#/" aria-label="Back to the map" title="Back to the map">
-      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15 4l-8 8 8 8" fill="none" stroke="currentColor" stroke-width="2.6"/></svg>
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15 4l-8 8 8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </a>
     <div class="stage-info" id="stageInfo"></div>
     <div class="compass" id="compass" aria-hidden="true"><span>N</span></div>
@@ -273,19 +286,19 @@
   <div class="sv-controls" id="svControls">
     <div class="sv-pad">
       <button type="button" class="sv-btn sv-ahead" data-act="ahead" data-label="Go forward (↑)" aria-label="Go forward">
-        <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M4 16l8-8 8 8" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+        <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M4 16l8-8 8 8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <button type="button" class="sv-btn sv-left" data-act="left" data-label="Turn left onto the crossing street (←)" aria-label="Turn left" hidden>
-        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M20 20v-6a4 4 0 0 0-4-4H5M9 6l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2.8"/></svg>
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M20 20v-6a4 4 0 0 0-4-4H5M9 6l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <button type="button" class="sv-btn sv-turn" data-act="turn" data-label="Turn around (U)" aria-label="Turn around">
-        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M8 20V9a4 4 0 0 1 8 0v6M12 12l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2.6"/></svg>
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M8 20V9a4 4 0 0 1 8 0v6M12 12l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <button type="button" class="sv-btn sv-right" data-act="right" data-label="Turn right onto the crossing street (→)" aria-label="Turn right" hidden>
-        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M4 20v-6a4 4 0 0 1 4-4h11M15 6l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2.8"/></svg>
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M4 20v-6a4 4 0 0 1 4-4h11M15 6l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <button type="button" class="sv-btn sv-back" data-act="back" data-label="Go back (↓)" aria-label="Go back">
-        <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M4 8l8 8 8-8" fill="none" stroke="currentColor" stroke-width="3"/></svg>
+        <svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path d="M4 8l8 8 8-8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
     </div>
     <button type="button" class="sv-drive" data-act="drive" data-label="Drive along the footage (Space)">
@@ -318,10 +331,10 @@
 
   <div class="rec-intro" id="recIntro">
     <div class="rec-intro-card">
-      <div class="plate plate-green plate-wide">
-        <span class="plate-glyph"><span class="rec-dot big" aria-hidden="true"></span></span>
-        <span class="plate-text"><b>Record a route</b><small>Video plus GPS, start to finish</small></span>
-      </div>
+      <header class="intro-head">
+        <span class="intro-icon"><span class="rec-dot big" aria-hidden="true"></span></span>
+        <div><h1 class="intro-title">Record a route</h1><p class="intro-sub">Video plus GPS, start to finish</p></div>
+      </header>
       <ol class="rec-steps">
         <li><b>Stand at the starting point.</b> Wait for the GPS chip to turn green.</li>
         <li><b>Hold the phone up</b> so the camera sees the way ahead, not your feet.</li>
@@ -337,7 +350,7 @@
   <div class="rec-hud" id="recHud" hidden>
     <div class="hud-top">
       <button class="hud-btn" id="recClose" type="button" aria-label="Close recorder">
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2.5"/></svg>
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
       <div class="chips">
         <span class="chip" id="gpsChip" data-state="wait">Finding GPS…</span>
@@ -349,12 +362,12 @@
     <div class="hud-cue" id="hudCue" hidden></div>
     <div class="hud-bottom">
       <button class="hud-btn hud-btn-label" id="noteBtn" type="button" disabled>
-        <svg viewBox="0 0 48 48" width="22" height="22" aria-hidden="true"><path d="M24 3 L45 24 L24 45 L3 24 Z" fill="none" stroke="currentColor" stroke-width="5"/><path d="M24 13 V28" stroke="currentColor" stroke-width="5"/><circle cx="24" cy="34.5" r="3" fill="currentColor"/></svg>
+        <svg viewBox="0 0 48 48" width="22" height="22" aria-hidden="true"><path d="M24 3 L45 24 L24 45 L3 24 Z" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M24 13 V28" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="34.5" r="3" fill="currentColor"/></svg>
         Add note
       </button>
       <button class="rec-btn" id="recBtn" type="button" aria-label="Start recording"><span></span></button>
       <button class="hud-btn hud-btn-label" id="flipBtn" type="button">
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9a8 8 0 0 1 14-3l2 2M20 15a8 8 0 0 1-14 3l-2-2" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M20 3v5h-5M4 21v-5h5" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9a8 8 0 0 1 14-3l2 2M20 15a8 8 0 0 1-14 3l-2-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 3v5h-5M4 21v-5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Flip
       </button>
     </div>
@@ -434,8 +447,8 @@
 
 <header class="topbar" id="topbar" hidden>
   <a href="#/" class="brand" aria-label="Waymark home"><span class="brand-plate">
-        <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path d="M16 44V24l12-12" fill="none" stroke="currentColor" stroke-width="6"/><path d="M36 4l2 15-15-2z" fill="currentColor"/></svg>
-        Waymark
+        <span class="brand-mark"><svg viewBox="0 0 48 48" width="17" height="17" aria-hidden="true"><path d="M16 42V25l11-11" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M36 6l1.6 14.5L23 19z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="brand-word">Waymark</span>
       </span></a>
   <nav class="topnav" aria-label="Sections">
     <a href="#/">Map</a>
@@ -448,7 +461,7 @@
 <main id="view-route" class="view route" hidden>
   <div class="route-head">
     <a href="#/" class="back">
-      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M15 4l-8 8 8 8" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M15 4l-8 8 8 8" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       All routes
     </a>
     <div class="route-title-row">
@@ -514,6 +527,6 @@
     }).catch(() => {});
   }
 </script>
-<script type="module" src="js/app.js?v=202610260147"></script>
+<script type="module" src="js/app.js?v=202610260243"></script>
 </body>
 </html>

@@ -6,39 +6,46 @@ export function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// Road-sign style arrow. `angle` is the turn in degrees (negative = left).
+// Maneuver arrow (rounded, like a car's turn card). `angle` is the turn in degrees (negative = left).
 export function arrowGlyph(angle = 0, size = 48) {
   if (Math.abs(angle) >= 150) {
     const s = angle < 0 ? -1 : 1; // hook to the turning side
     const x = (v) => 24 + s * v;
     return `<svg viewBox="0 0 48 48" width="${size}" height="${size}" aria-hidden="true" class="glyph">
-      <path d="M${x(-8)} 44 V20 a8 8 0 0 1 ${s * 16} 0 V30" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square"/>
-      <path d="M${x(0)} 28 L${x(16)} 28 L${x(8)} 40 Z" fill="currentColor"/></svg>`;
+      <path d="M${x(-8)} 43 V20 a8 8 0 0 1 ${s * 16} 0 V29" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M${x(1.5)} 28.5 L${x(14.5)} 28.5 L${x(8)} 38.5 Z" fill="currentColor" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></svg>`;
   }
   const a = (angle * Math.PI) / 180;
   const ex = 24 + 12 * Math.sin(a), ey = 26 - 12 * Math.cos(a); // straight ahead: tip lands at y=5
   const hx = Math.sin(a), hy = -Math.cos(a); // head direction
   const px = -hy, py = hx; // perpendicular
-  const tip = [ex + hx * 9, ey + hy * 9], l = [ex + px * 8, ey + py * 8], r = [ex - px * 8, ey - py * 8];
+  const tip = [ex + hx * 8.5, ey + hy * 8.5], l = [ex + px * 7.5, ey + py * 7.5], r = [ex - px * 7.5, ey - py * 7.5];
   return `<svg viewBox="0 0 48 48" width="${size}" height="${size}" aria-hidden="true" class="glyph">
-    <path d="M24 46 V26 L${ex.toFixed(1)} ${ey.toFixed(1)}" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="miter"/>
-    <path d="M${tip[0].toFixed(1)} ${tip[1].toFixed(1)} L${l[0].toFixed(1)} ${l[1].toFixed(1)} L${r[0].toFixed(1)} ${r[1].toFixed(1)} Z" fill="currentColor"/></svg>`;
+    <path d="M24 43 V26 L${ex.toFixed(1)} ${ey.toFixed(1)}" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M${tip[0].toFixed(1)} ${tip[1].toFixed(1)} L${l[0].toFixed(1)} ${l[1].toFixed(1)} L${r[0].toFixed(1)} ${r[1].toFixed(1)} Z" fill="currentColor" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></svg>`;
 }
 
 export function cueGlyph(cue, size = 48) {
   if (cue.type === 'turn') return arrowGlyph(cue.angle, size);
   if (cue.type === 'arrive') {
     return `<svg viewBox="0 0 48 48" width="${size}" height="${size}" aria-hidden="true" class="glyph">
-      <path d="M12 44 V6" stroke="currentColor" stroke-width="5"/>
-      <path d="M14 7 H38 L32 15 L38 23 H14 Z" fill="currentColor"/></svg>`;
+      <path d="M13 43 V7" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/>
+      <path d="M15 8 H36 L30.5 15.5 L36 23 H15 Z" fill="currentColor" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/></svg>`;
   }
   if (cue.type === 'note') {
     return `<svg viewBox="0 0 48 48" width="${size}" height="${size}" aria-hidden="true" class="glyph">
-      <path d="M24 3 L45 24 L24 45 L3 24 Z" fill="none" stroke="currentColor" stroke-width="4.5"/>
-      <path d="M24 13 V28" stroke="currentColor" stroke-width="5"/><circle cx="24" cy="34.5" r="3" fill="currentColor"/></svg>`;
+      <path d="M24 4.5 L43.5 24 L24 43.5 L4.5 24 Z" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/>
+      <path d="M24 15 V27" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/><circle cx="24" cy="33.5" r="2.8" fill="currentColor"/></svg>`;
   }
   return `<svg viewBox="0 0 48 48" width="${size}" height="${size}" aria-hidden="true" class="glyph">
-    <circle cx="24" cy="24" r="15" fill="none" stroke="currentColor" stroke-width="6"/><circle cx="24" cy="24" r="5" fill="currentColor"/></svg>`;
+    <circle cx="24" cy="24" r="14" fill="none" stroke="currentColor" stroke-width="5"/><circle cx="24" cy="24" r="5" fill="currentColor"/></svg>`;
+}
+
+// Turn card contents: the maneuver arrow, the distance in big type, the street
+// under it, then a quieter line. Goes inside a .plate (drive HUD, footage viewer).
+export function turnSignHtml({ glyph = '', dist = '', road = '', sub = '' }) {
+  return `${glyph ? `<span class="plate-glyph">${glyph}</span>` : ''}<span class="plate-text"><b>${esc(dist)}</b>`
+    + `${road ? `<span class="plate-road">${esc(road)}</span>` : ''}${sub ? `<small>${esc(sub)}</small>` : ''}</span>`;
 }
 
 let toastTimer;
