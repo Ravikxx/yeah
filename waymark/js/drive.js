@@ -3,19 +3,19 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610270049';
-import * as queue from './queue.js?v=202610270049';
-import * as coverage from './coverage.js?v=202610270049';
-import { findView } from './street.js?v=202610270049';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610270049';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610270049';
-import { coverageLines } from './street.js?v=202610270049';
-import { planTrip } from './directions.js?v=202610270049';
-import * as copilot from './copilot.js?v=202610270049';
-import { searchPlaces } from './api.js?v=202610270049';
-import { snapToTrack } from './geo.js?v=202610270049';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610270049';
-import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610270049';
+import { pickMime } from './record.js?v=202610270054';
+import * as queue from './queue.js?v=202610270054';
+import * as coverage from './coverage.js?v=202610270054';
+import { findView } from './street.js?v=202610270054';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610270054';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610270054';
+import { coverageLines } from './street.js?v=202610270054';
+import { planTrip } from './directions.js?v=202610270054';
+import * as copilot from './copilot.js?v=202610270054';
+import { searchPlaces } from './api.js?v=202610270054';
+import { snapToTrack } from './geo.js?v=202610270054';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610270054';
+import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610270054';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -740,10 +740,10 @@ async function loopCopilot() {
           drawPath(steadyPath(last), pathOpts(last));
           const done = performance.now();
           CP.secs = (done - t0) / 1000; lastDet = done; feed(last, done);
-          // key moments: a look every second. Otherwise looks in pairs 1 s apart (so the model's
-          // "1 s ago" input is real), then a 2 s pause.
           pairStep = key ? 0 : pairStep + 1;
-          nextFull = t0 + (key || pairStep % 2 === 1 ? 1000 : 3000);
+          // key moments: up to two looks a second when the phone keeps up (a look is ~300-400 ms), never slower than one a second.
+          // Calm riding: a look, another 1 s later (so the model's '1 s ago' input is real), then a 3 s pause.
+          nextFull = t0 + (key ? Math.min(1000, Math.max(500, 1.6 * (done - t0))) : pairStep % 2 === 1 ? 1000 : 3000);
         } else if (t0 - lastZoom > (CP.sign || CP.cand ? 1500 : 2000) && nextFull - t0 > 400) { op = 'signs';
           const sg = await copilot.signs(el.dcam, hfov()); lastZoom = performance.now();
           // a stop sign counts once two zoomed looks in a row (within 3 s) see it with confidence;
@@ -756,7 +756,7 @@ async function loopCopilot() {
         } else if (t0 - lastDet > CP.detEvery && nextFull - t0 > 600) { op = 'detect';
           const r = await copilot.detectFrame(el.dcam); lastDet = performance.now(); feed(r, lastDet);
           CP.detEvery = Math.max(1000, Math.min(4000, 2.5 * (lastDet - t0))); // the detector may use at most ~40% of the time
-        } else if (last?.lane && t0 - lastLane > laneEvery && nextFull - t0 > 400) { op = 'lane';
+        } else if (last?.lane && t0 - lastLane > laneEvery && nextFull - t0 > 150) { op = 'lane';
           // the lane finder alone (about 50 ms): the band follows the road several times a second between looks.
           // It never delays a look, and backs off if it's slow (at most a quarter of the time).
           const ln = await copilot.laneOnly(el.dcam); lastLane = performance.now(); laneEvery = Math.max(200, 4 * (lastLane - t0));
