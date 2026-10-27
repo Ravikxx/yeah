@@ -63,6 +63,7 @@ export function makeMap(el, opts = {}) {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     className: 'osm-tiles',
+    crossOrigin: true, // loaded in CORS mode: needed on pages that are cross-origin isolated the strict way (Safari / iPhone)
   }).addTo(map);
   if (opts.zoomControl !== false) L.control.zoom({ position: 'bottomright' }).addTo(map);
   // Directions draw in their own pane so they stay above captured-street lines.

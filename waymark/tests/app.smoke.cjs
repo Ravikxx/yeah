@@ -16,7 +16,7 @@ const { chromium } = require('playwright');
   const errors = new Set();
   p.on('console', (m) => { if (m.type() === 'error' && /copilot/i.test(m.text())) errors.add(m.text().slice(0, 300)); });
   p.on('pageerror', (e) => errors.add(String(e).slice(0, 300)));
-  await p.goto(`${base}index.html#/drive`);
+  await p.goto(`${base}index.html${process.env.STRICT ? '?coep=strict' : ''}#/drive`);
   await p.waitForSelector('#driveStart', { timeout: 20000 });
   await p.click('#driveStart');
   await p.waitForTimeout(4000);

@@ -15,7 +15,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&display=swap">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="styles.css?v=202610270002">
+<link rel="stylesheet" href="styles.css?v=202610270010">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='12' fill='%23171A20'/%3E%3Cpath d='M18 40V24l10-10' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M35 8l1.5 12.5L24 19z' fill='%233E6AE1' stroke='%233E6AE1' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -169,7 +169,7 @@
       <button id="driveStart" class="btn btn-primary btn-lg" type="button">Turn on camera</button>
       <p class="fine" id="driveError" role="alert" hidden></p>
       <p class="fine">Uses about 4 MB of data per minute. Don’t touch your phone while driving; set it up before you go.</p>
-      <p class="fine">Version <span id="appVersion">202610270002</span></p>
+      <p class="fine">Version <span id="appVersion">202610270010</span></p>
       <a href="#/" class="btn btn-ghost">Cancel</a>
     </form>
   </div>
@@ -541,9 +541,25 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
   // All CPU cores for the co-pilot (see coi-sw.js). The page reloads once the first time.
-  if ('serviceWorker' in navigator && !self.crossOriginIsolated && window.isSecureContext) {
-    navigator.serviceWorker.register('coi-sw.js').then((reg) => {
-      if (navigator.serviceWorker.controller) return;
+  const qs = new URLSearchParams(location.search);
+  if (qs.get('coi') === '0' && 'serviceWorker' in navigator) { // switch the helper off (and forget it)
+    navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.unregister()));
+  } else if ('serviceWorker' in navigator && !self.crossOriginIsolated && window.isSecureContext) {
+    navigator.serviceWorker.register(qs.get('coep') === 'strict' ? 'coi-sw.js?mode=strict' : 'coi-sw.js').then(async (reg) => {
+      if (navigator.serviceWorker.controller) {
+        // already controlled but still not isolated: an older helper may be serving this page. Fetch the newest one,
+        // wait for it to take over, and reload once (once per visit, so it can never loop).
+        let tried = false;
+        try { tried = sessionStorage.getItem('coi-retried') === '1'; } catch { /* private mode */ }
+        if (!tried) {
+          try { sessionStorage.setItem('coi-retried', '1'); } catch { /* private mode */ }
+          try { await reg.update(); } catch { /* offline */ }
+          const w = reg.installing || reg.waiting;
+          if (w && w.state !== 'activated') await new Promise((r) => { w.addEventListener('statechange', () => w.state === 'activated' && r()); setTimeout(r, 3000); });
+          location.reload();
+        }
+        return;
+      }
       let done = false;
       try { done = sessionStorage.getItem('coi-reloaded') === '1'; } catch { /* private mode */ }
       if (done) return;
@@ -552,6 +568,6 @@
     }).catch(() => {});
   }
 </script>
-<script type="module" src="js/app.js?v=202610270002"></script>
+<script type="module" src="js/app.js?v=202610270010"></script>
 </body>
 </html>
