@@ -50,14 +50,15 @@ function gpuAllowed() {
   try {
     const q = new URLSearchParams(location.search).get('gpu');
     if (q === '1') { localStorage.removeItem('waymark.forceCpu'); return true; }
-    if (q === '0') return false;
-    return localStorage.getItem('waymark.forceCpu') !== '1';
+    if (q === '0') { EP.why = 'forced by ?gpu=0'; return false; }
+    if (localStorage.getItem('waymark.forceCpu') === '1') { EP.why = 'switched to the processor after a crash (add ?gpu=1 to try the GPU again)'; return false; }
+    return true;
   } catch { return true; }
 }
 async function hasGpu() {
   if (gpuOk === null && !gpuAllowed()) gpuOk = false;
   if (gpuOk === null) {
-    try { gpuOk = !!navigator.gpu && !!(await within(navigator.gpu.requestAdapter(), 5000, 'finding the GPU')); } catch { gpuOk = false; }
+    try { gpuOk = !!navigator.gpu && !!(await within(navigator.gpu.requestAdapter(), 5000, 'finding the GPU')); if (!gpuOk) EP.why = navigator.gpu ? 'no GPU adapter offered' : 'this browser has no WebGPU'; } catch (e) { gpuOk = false; EP.why = `GPU lookup failed: ${e.message || e}`; }
   }
   return gpuOk;
 }
@@ -66,7 +67,7 @@ async function makeSession(bytes, key) {
     try {
       const s = await within(ort.InferenceSession.create(bytes, { executionProviders: ['webgpu', 'wasm'] }), 20000, 'GPU setup');
       EP[key] = 'GPU'; return s;
-    } catch (e) { console.warn('co-pilot: GPU not available for', key, e); gpuOk = false; }
+    } catch (e) { console.warn('co-pilot: GPU not available for', key, e); gpuOk = false; EP.why = `GPU setup failed for ${key}: ${String(e.message || e).slice(0, 80)}`; }
   }
   EP[key] = cpuName();
   return ort.InferenceSession.create(bytes, { executionProviders: ['wasm'] });
@@ -79,6 +80,7 @@ export async function load(onProgress = () => {}) {
   if (M) return;
   ort = await import(`${ORT}ort.min.mjs`);
   ort.env.wasm.wasmPaths = ORT;
+  EP.isolated = !!self.crossOriginIsolated;
   EP.threads = self.crossOriginIsolated ? Math.max(1, Math.min(8, navigator.hardwareConcurrency || 4)) : 1;
   try { const n = Number(localStorage.getItem('waymark.debug.threads')); if (n > 0) EP.threads = Math.min(EP.threads, n); } catch { /* no storage */ }
   ort.env.wasm.numThreads = EP.threads;
