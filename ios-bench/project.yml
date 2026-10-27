@@ -1,0 +1,32 @@
+name: WaymarkBench
+options:
+  bundleIdPrefix: com.waymarkbench
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  OnnxRuntime:
+    url: https://github.com/microsoft/onnxruntime-swift-package-manager
+    from: 1.19.0
+targets:
+  WaymarkBench:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - Resources
+      - path: Models
+        optional: true
+    dependencies:
+      - package: OnnxRuntime
+        product: onnxruntime
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.waymarkbench.app
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Waymark Bench
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
