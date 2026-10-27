@@ -592,7 +592,7 @@ export async function look(video, state) {
   p.path = state.map ? predictPath(x, state.map, state.speed, pic) : null;
   if (p.path && state.map.slice(0, 3).every((v) => v != null && Math.abs(v) < 0.5)) p.path = p.path.map((y) => 0.3 * y); // map says straight: damp the wobble
   p.lane = lane;
-  lap('trees', tTrees); lap('total'); LAST.times = T;
+  lap('trees', tTrees); lap('total'); T.found = ds.length; LAST.times = T;
   // follow the directions when a turn is under 30 m away (as in training)
   const nv = x.slice(-10);
   if (nv[6] < 30 && (nv[1] || nv[2])) p.turn = nv[1] ? [0.75, 0.25, 0] : [0, 0.25, 0.75];

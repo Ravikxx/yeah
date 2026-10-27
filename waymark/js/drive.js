@@ -3,19 +3,19 @@
 // upload while the next piece starts. Each piece is a video plus the GPS
 // track on the same clock, which is all street view needs.
 
-import { pickMime } from './record.js?v=202610270010';
-import * as queue from './queue.js?v=202610270010';
-import * as coverage from './coverage.js?v=202610270010';
-import { findView } from './street.js?v=202610270010';
-import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610270010';
-import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610270010';
-import { coverageLines } from './street.js?v=202610270010';
-import { planTrip } from './directions.js?v=202610270010';
-import * as copilot from './copilot.js?v=202610270010';
-import { searchPlaces } from './api.js?v=202610270010';
-import { snapToTrack } from './geo.js?v=202610270010';
-import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610270010';
-import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610270010';
+import { pickMime } from './record.js?v=202610270020';
+import * as queue from './queue.js?v=202610270020';
+import * as coverage from './coverage.js?v=202610270020';
+import { findView } from './street.js?v=202610270020';
+import { prepareTrack, distance, bearing, formatDistance, formatClock } from './geo.js?v=202610270020';
+import { $, esc, makeMap, routeLine, viewerIcon, drawCoverage, toast } from './ui.js?v=202610270020';
+import { coverageLines } from './street.js?v=202610270020';
+import { planTrip } from './directions.js?v=202610270020';
+import * as copilot from './copilot.js?v=202610270020';
+import { searchPlaces } from './api.js?v=202610270020';
+import { snapToTrack } from './geo.js?v=202610270020';
+import { navLine, pinIcon, arrowGlyph, cueGlyph } from './ui.js?v=202610270020';
+import { turnRateFrom, smoothRate, planBand, avoidCars, nearestStop, yawFromMotion, gyroTurnFrom, newCalib, calibUpdate, calibSign } from './band.js?v=202610270020';
 
 const CHUNK_SECONDS = (() => {
   try { return Number(localStorage.getItem('waymark.debug.chunkSeconds')) || 120; } catch { return 120; }
@@ -1061,10 +1061,13 @@ try { if (localStorage.getItem('waymark.debug') === '1') DEBUG_TURN = true; } ca
 }
 // the last ~12 s of turn sensors (twice a second), attached to a "Co-pilot is wrong" tap so a bad turn can be looked at afterwards
 const TRACE = [];
-let traceN = 0;
+let traceN = 0, lastTm = null;
+const LOOKS = []; // the last 10 looks' timings: one look is too noisy to compare the GPU with the processor, or one scene with another
+const avgOf = (k) => Math.round(LOOKS.reduce((a, t) => a + (t[k] ?? 0), 0) / Math.max(1, LOOKS.length));
 function traceTick() {
   if (++traceN % 5) return;
-  const g = GY.last;
+  const g = GY.last, tmNow = copilot.lastTimes();
+  if (tmNow && tmNow !== lastTm) { lastTm = tmNow; LOOKS.push(tmNow); while (LOOKS.length > 10) LOOKS.shift(); }
   TRACE.push({ t: performance.now(), r: CP.rateF ?? 0, gy: g?.gy ?? null, comp: g?.comp ?? null, v: S.gpsSpeed ?? null, hc: C.hist?.length ?? 0, hg: GY.hist.length });
   while (TRACE.length && performance.now() - TRACE[0].t > 12000) TRACE.shift();
   if (!DEBUG_TURN) return;
@@ -1073,6 +1076,7 @@ function traceTick() {
   const f = (x) => (x == null ? '–' : Math.round(x));
   const tm = copilot.lastTimes(), be = copilot.backend();
   el.textContent = `turn ${f(CP.rateF)}°/s  gyro ${f(g?.gy)}  compass ${f(g?.comp)}  sign ${g?.sg ?? 0}  speed ${S.gpsSpeed == null ? '–' : (S.gpsSpeed * 2.237).toFixed(1)} mph\ngyro ${GY.on ? 'on' : 'OFF'} (${GY.hist.length})  lane updates ${CP.laneN || 0}  compass ${C.heading == null ? 'OFF' : Math.round(C.heading) + '°'} (${C.hist?.length ?? 0})` +
+    (LOOKS.length ? `\naverage of ${LOOKS.length} looks: ${avgOf('total')} ms · eyes ${avgOf('eyes')} · cars ${avgOf('cars')} · lane ${avgOf('lane')} · found ${avgOf('found')} things` : '') +
     (tm ? `\nlook ${tm.total} ms on ${be.detector}: eyes ${tm.eyes} · cars ${tm.cars} · lane ${tm.lane} · prep ${tm.prep} · trees ${tm.trees}  (eyes ${be.resnet}, lane ${be.lane})` : '\nno look yet') +
     `\n${be.detector === 'GPU' ? 'running on the GPU' : `on the processor because: ${be.why || 'unknown'}`}\ncores ${be.threads} · isolated ${be.isolated ? 'yes' : 'NO (one core only)'} · detector every ${Math.round(CP.detEvery || 1000)} ms`;
 }
