@@ -52,6 +52,10 @@ function gpuAllowed() {
     if (q === '1') { localStorage.removeItem('waymark.forceCpu'); return true; }
     if (q === '0') { EP.why = 'forced by ?gpu=0'; return false; }
     if (localStorage.getItem('waymark.forceCpu') === '1') { EP.why = 'switched to the processor after a crash (add ?gpu=1 to try the GPU again)'; return false; }
+    // iPhone / iPad: on an iPhone 17 Pro, same scene, average of 10 looks, the processor (4 cores) took 185 ms and the GPU 182 ms:
+    // no gain, and the GPU crashed the page once. So the processor, which also leaves the GPU's memory alone.
+    const apple = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+    if (apple && self.crossOriginIsolated) { EP.why = 'iPhone / iPad: measured the same speed as the GPU, and steadier (add ?gpu=1 to use the GPU)'; return false; }
     return true;
   } catch { return true; }
 }
