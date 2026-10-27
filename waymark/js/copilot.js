@@ -565,13 +565,16 @@ export async function look(video, state) {
   // up front (they used to read it one after another, a bit later each).
   const T = {}, t0 = performance.now(), lap = (k, a = t0) => { T[k] = Math.round(performance.now() - a); };
   const img = grab(video), { W, H } = img;
-  const eIn = embedFeeds(video, W, H), dIn = detectInput(img), lIn = laneInput(video, W, H);
+  // the car detector runs on its own schedule now (drive.js); a look reuses its latest result when it's under 0.6 s old
+  const rd = state.recentDets, reuse = !!(rd && rd.W === W && rd.H === H && performance.now() - rd.at < 600);
+  const eIn = embedFeeds(video, W, H), dIn = reuse ? null : detectInput(img), lIn = laneInput(video, W, H);
   lap('prep');
   const timed = async (k, p) => { const a = performance.now(); const r = await p(); lap(k, a); return r; };
   // One model at a time, on the GPU too: the browser's model runtime can't run two at once (it broke every look
   // when I tried). The inputs were all made from the same frame above, so they still match.
   const emb = await timed('eyes', () => embedRun(eIn));
-  const ds = await timed('cars', () => detectRun(img, dIn));
+  const ds = reuse ? rd.dets : await timed('cars', () => detectRun(img, dIn));
+  if (reuse) T.cars = 0;
   const lane = await timed('lane', () => laneRun(lIn));
   const tTrees = performance.now();
   const df = detFeats(ds, W, H);
@@ -596,7 +599,7 @@ export async function look(video, state) {
   p.path = state.map ? predictPath(x, state.map, state.speed, pic) : null;
   if (p.path && state.map.slice(0, 3).every((v) => v != null && Math.abs(v) < 0.5)) p.path = p.path.map((y) => 0.3 * y); // map says straight: damp the wobble
   p.lane = lane;
-  lap('trees', tTrees); lap('total'); T.found = ds.length; LAST.times = T;
+  lap('trees', tTrees); lap('total'); T.found = ds.length; T.reused = reuse; LAST.times = T;
   // follow the directions when a turn is under 30 m away (as in training)
   const nv = x.slice(-10);
   if (nv[6] < 30 && (nv[1] || nv[2])) p.turn = nv[1] ? [0.75, 0.25, 0] : [0, 0.25, 0.75];

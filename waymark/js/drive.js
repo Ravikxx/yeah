@@ -735,11 +735,13 @@ async function loopCopilot() {
       try {
         const key = CP.key = keyMoment(last);
         if (t0 >= nextFull) { op = 'look';
-          last = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null, limit: limitNow(), map: mapAhead(), speed: S.gpsSpeed ?? 0 });
+          last = await copilot.look(el.dcam, { look: C.last ?? null, nav: S.navNow || null, limit: limitNow(), map: mapAhead(), speed: S.gpsSpeed ?? 0, recentDets: CP.recentDets });
           last.stamp = performance.now(); CP.lastR = last;
           drawPath(steadyPath(last), pathOpts(last));
           const done = performance.now();
-          CP.secs = (done - t0) / 1000; lastDet = done; feed(last, done);
+          CP.secs = (done - t0) / 1000;
+          if (copilot.lastTimes()?.reused) track(last.frame, done); // used the detector's latest result: nothing new to give the tracker
+          else { lastDet = done; CP.recentDets = { dets: last.dets, W: last.W, H: last.H, at: done }; feed(last, done); }
           pairStep = key ? 0 : pairStep + 1;
           // key moments: up to two looks a second when the phone keeps up (a look is ~300-400 ms), never slower than one a second.
           // Calm riding: a look, another 1 s later (so the model's '1 s ago' input is real), then a 3 s pause.
@@ -753,9 +755,13 @@ async function loopCopilot() {
             CP.cand = { at: lastZoom };
           }
           if (sg.light) CP.light = { ...sg.light, at: lastZoom };
-        } else if (t0 - lastDet > CP.detEvery && nextFull - t0 > 600) { op = 'detect';
+        } else if (t0 - lastDet > CP.detEvery && nextFull - t0 > 120) { op = 'detect';
           const r = await copilot.detectFrame(el.dcam); lastDet = performance.now(); feed(r, lastDet);
-          CP.detEvery = Math.max(1000, Math.min(4000, 2.5 * (lastDet - t0))); // the detector may use at most ~40% of the time
+          CP.recentDets = { dets: r.dets, W: r.frame.W, H: r.frame.H, at: lastDet };
+          // while riding (or at a key moment) the detector runs about twice a second, so a new car or sign shows up within ~0.5 s;
+          // standing still it eases off, and either way it never takes more than about half the phone's time
+          const dur = lastDet - t0, riding = (S.gpsSpeed ?? 0) >= 1.5 || CP.key;
+          CP.detEvery = riding ? Math.max(400, 2 * dur) : Math.max(1000, Math.min(4000, 2.5 * dur));
         } else if (last?.lane && t0 - lastLane > laneEvery && nextFull - t0 > 150) { op = 'lane';
           // the lane finder alone (about 50 ms): the band follows the road several times a second between looks.
           // It never delays a look, and backs off if it's slow (at most a quarter of the time).
@@ -1077,7 +1083,7 @@ function traceTick() {
   const tm = copilot.lastTimes(), be = copilot.backend();
   el.textContent = `turn ${f(CP.rateF)}°/s  gyro ${f(g?.gy)}  compass ${f(g?.comp)}  sign ${g?.sg ?? 0}  speed ${S.gpsSpeed == null ? '–' : (S.gpsSpeed * 2.237).toFixed(1)} mph\ngyro ${GY.on ? 'on' : 'OFF'} (${GY.hist.length})  lane updates ${CP.laneN || 0}  compass ${C.heading == null ? 'OFF' : Math.round(C.heading) + '°'} (${C.hist?.length ?? 0})` +
     (LOOKS.length ? `\naverage of ${LOOKS.length} looks: ${avgOf('total')} ms · eyes ${avgOf('eyes')} · cars ${avgOf('cars')} · lane ${avgOf('lane')} · found ${avgOf('found')} things` : '') +
-    (tm ? `\nlook ${tm.total} ms on ${be.detector}: eyes ${tm.eyes} · cars ${tm.cars} · lane ${tm.lane} · prep ${tm.prep} · trees ${tm.trees}  (eyes ${be.resnet}, lane ${be.lane})` : '\nno look yet') +
+    (tm ? `\nlook ${tm.total} ms on ${be.detector}: eyes ${tm.eyes} · cars ${tm.cars}${tm.reused ? ' (reused)' : ''} · lane ${tm.lane} · prep ${tm.prep} · trees ${tm.trees}  (eyes ${be.resnet}, lane ${be.lane})` : '\nno look yet') +
     `\n${be.detector === 'GPU' ? 'running on the GPU' : `on the processor because: ${be.why || 'unknown'}`}\ncores ${be.threads} · isolated ${be.isolated ? 'yes' : 'NO (one core only)'} · detector every ${Math.round(CP.detEvery || 1000)} ms`;
 }
 function traceText() { // 1 s steps, newest last: rate:gyro:compass
